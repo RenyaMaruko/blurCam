@@ -270,7 +270,7 @@ struct CameraPreviewScreen: View {
                 }
                 .padding(.horizontal, DesignTokens.Spacing.space8)
             }
-            .padding(.bottom, DesignTokens.Spacing.space10)
+            .padding(.bottom, DesignTokens.Spacing.space4)
             .background(
                 LinearGradient(
                     stops: [
@@ -282,6 +282,7 @@ struct CameraPreviewScreen: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(false)
             )
         }
