@@ -327,43 +327,45 @@ final class CameraViewModel: ObservableObject {
     func switchCamera() {
         guard isCameraConfigured, !isSwitchingCamera, !isRecording else { return }
 
+        // Start animation immediately on main thread
         isSwitchingCamera = true
 
+        // Do camera switch on background thread to not block the animation
         let session = cameraService.captureSession
+        let processor = videoFrameProcessor
+        let service = cameraService
 
-        // Stop session synchronously to prevent beginConfiguration/startRunning conflicts
-        session.stopRunning()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            session.stopRunning()
+            processor.stopProcessing()
 
-        // Remove video output while stopped
-        videoFrameProcessor.stopProcessing()
+            do {
+                let newPosition = try service.switchCamera()
+                try processor.startProcessing(on: session)
+                session.startRunning()
 
-        do {
-            let newPosition = try cameraService.switchCamera()
-            cameraPosition = newPosition
-            hasFlash = cameraService.hasFlash
-
-            if !hasFlash && flashMode != .off {
-                flashMode = .off
-                cameraService.flashMode = .off
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.cameraPosition = newPosition
+                    self.hasFlash = service.hasFlash
+                    if !self.hasFlash && self.flashMode != .off {
+                        self.flashMode = .off
+                        service.flashMode = .off
+                    }
+                    self.loadRegisteredFaceData()
+                }
+            } catch {
+                session.startRunning()
+                Task { @MainActor [weak self] in
+                    self?.errorMessage = error.localizedDescription
+                }
             }
 
-            // Re-add video output (with mirroring disabled for consistent recognition)
-            try videoFrameProcessor.startProcessing(on: session)
-
-            // Reload registered face data
-            loadRegisteredFaceData()
-
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        // Restart session after all configuration is complete
-        session.startRunning()
-
-        // End the switching animation after a short delay
-        Task {
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
-            isSwitchingCamera = false
+            // End animation after camera is ready
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                self?.isSwitchingCamera = false
+            }
         }
     }
 

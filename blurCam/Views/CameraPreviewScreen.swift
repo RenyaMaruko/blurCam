@@ -32,9 +32,14 @@ struct CameraPreviewScreen: View {
                 axis: (x: 0, y: 1, z: 0),
                 perspective: 0.4
             )
-            .scaleEffect(cameraViewModel.isSwitchingCamera ? 0.92 : 1.0)
-            .opacity(cameraViewModel.isSwitchingCamera ? 0.5 : 1.0)
-            .animation(.easeInOut(duration: 0.3), value: cameraViewModel.isSwitchingCamera)
+            .scaleEffect(cameraViewModel.isSwitchingCamera ? 0.95 : 1.0)
+            .opacity(cameraViewModel.isSwitchingCamera ? 0.0 : 1.0)
+            .rotation3DEffect(
+                .degrees(cameraViewModel.isSwitchingCamera ? 90 : 0),
+                axis: (x: 0, y: 1, z: 0),
+                perspective: 0.3
+            )
+            .animation(.easeInOut(duration: 0.2), value: cameraViewModel.isSwitchingCamera)
 
             // UI overlay
             VStack(spacing: 0) {
