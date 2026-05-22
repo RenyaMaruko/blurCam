@@ -240,7 +240,7 @@ struct SettingsView: View {
 /// A row in the registered faces list displaying a face thumbnail and delete button.
 /// Styled with dark theme and subtle borders matching iOS Settings appearance.
 struct FaceListRow: View {
-    let face: FaceEntry
+    let face: FaceGroupEntry
     let onDelete: () -> Void
 
     var body: some View {
@@ -254,7 +254,7 @@ struct FaceListRow: View {
                     .font(.system(size: DesignTokens.Typography.base, weight: DesignTokens.Typography.Weight.medium))
                     .foregroundStyle(DesignTokens.Colors.textPrimary)
 
-                Text(formattedDate)
+                Text("\(formattedDate) · \(face.photoCount)枚")
                     .font(.system(size: DesignTokens.Typography.sm))
                     .foregroundStyle(DesignTokens.Colors.textTertiary)
             }

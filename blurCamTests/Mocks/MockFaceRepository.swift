@@ -35,13 +35,13 @@ final class MockFaceRepository: FaceRepositoryProtocol, @unchecked Sendable {
     }
 
     @discardableResult
-    func saveFace(_ imageData: Data) throws -> FaceRegistration {
+    func saveFace(_ imageData: Data, groupId: UUID? = nil) throws -> FaceRegistration {
         saveFaceCallCount += 1
         if let error = saveFaceError {
             throw error
         }
         savedImageData.append(imageData)
-        let reg = FaceRegistration(imageFileName: "test-face-\(saveFaceCallCount).jpg")
+        let reg = FaceRegistration(groupId: groupId ?? UUID(), imageFileName: "test-face-\(saveFaceCallCount).jpg")
         hasRegisteredFace = true
         registration = reg
         registrations.append(reg)

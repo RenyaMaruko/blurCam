@@ -67,7 +67,7 @@ final class FaceRepository: FaceRepositoryProtocol {
     }
 
     @discardableResult
-    func saveFace(_ imageData: Data) throws -> FaceRegistration {
+    func saveFace(_ imageData: Data, groupId: UUID? = nil) throws -> FaceRegistration {
         guard !imageData.isEmpty else {
             throw FaceRepositoryError.invalidData
         }
@@ -87,7 +87,7 @@ final class FaceRepository: FaceRepositoryProtocol {
         }
 
         // Create registration and add to list
-        let registration = FaceRegistration(imageFileName: imageFileName)
+        let registration = FaceRegistration(groupId: groupId ?? UUID(), imageFileName: imageFileName)
         var registrations = loadAllRegistrations()
         registrations.append(registration)
         try saveRegistrations(registrations)

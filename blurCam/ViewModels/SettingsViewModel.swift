@@ -8,8 +8,8 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Published Properties
 
-    /// All registered faces with their thumbnail image data
-    @Published private(set) var registeredFaces: [FaceEntry] = []
+    /// Registered face groups (each person = 1 group with multiple photos)
+    @Published private(set) var registeredFaces: [FaceGroupEntry] = []
 
     /// Current blur intensity setting
     @Published var blurIntensity: BlurIntensity = .medium {
@@ -22,8 +22,8 @@ final class SettingsViewModel: ObservableObject {
     /// Whether a confirmation dialog for face deletion is shown
     @Published var showDeleteConfirmation: Bool = false
 
-    /// The face entry pending deletion (used with confirmation dialog)
-    @Published var faceToDelete: FaceEntry?
+    /// The face group pending deletion (used with confirmation dialog)
+    @Published var faceToDelete: FaceGroupEntry?
 
     /// Error message to display
     @Published private(set) var errorMessage: String?
@@ -67,32 +67,44 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Public Methods
 
-    /// Reloads the list of registered faces from the repository
+    /// Reloads the list of registered faces, grouped by person
     func loadFaces() {
         let registrations = faceRepository.loadAllRegistrations()
-        registeredFaces = registrations.map { registration in
-            let imageData = faceRepository.loadFaceImage(for: registration)
-            return FaceEntry(
-                id: registration.id,
-                registeredAt: registration.registeredAt,
-                imageFileName: registration.imageFileName,
-                thumbnailData: imageData
-            )
+
+        // Group by groupId
+        var groups: [UUID: [FaceRegistration]] = [:]
+        for reg in registrations {
+            groups[reg.groupId, default: []].append(reg)
         }
+
+        registeredFaces = groups.map { (groupId, regs) in
+            // Use the first registration's image as thumbnail
+            let firstReg = regs.sorted { $0.registeredAt < $1.registeredAt }.first!
+            let thumbnailData = faceRepository.loadFaceImage(for: firstReg)
+            return FaceGroupEntry(
+                groupId: groupId,
+                registrationIds: regs.map { $0.id },
+                registeredAt: firstReg.registeredAt,
+                photoCount: regs.count,
+                thumbnailData: thumbnailData
+            )
+        }.sorted { $0.registeredAt < $1.registeredAt }
     }
 
-    /// Initiates face deletion by showing a confirmation dialog
-    func requestDeleteFace(_ face: FaceEntry) {
+    /// Initiates face group deletion by showing a confirmation dialog
+    func requestDeleteFace(_ face: FaceGroupEntry) {
         faceToDelete = face
         showDeleteConfirmation = true
     }
 
-    /// Confirms deletion of the pending face
+    /// Confirms deletion of the pending face group (all photos of that person)
     func confirmDeleteFace() {
         guard let face = faceToDelete else { return }
 
         do {
-            try faceRepository.deleteFace(id: face.id)
+            for regId in face.registrationIds {
+                try faceRepository.deleteFace(id: regId)
+            }
             loadFaces()
             errorMessage = nil
             onFacesChanged?()
@@ -141,14 +153,17 @@ final class SettingsViewModel: ObservableObject {
 
 // MARK: - Supporting Types
 
-/// Represents a registered face entry for display in the settings screen
-struct FaceEntry: Identifiable, Equatable {
-    let id: UUID
+/// Represents a group of registered face photos (one person) for display in settings
+struct FaceGroupEntry: Identifiable, Equatable {
+    let groupId: UUID
+    let registrationIds: [UUID]
     let registeredAt: Date
-    let imageFileName: String
+    let photoCount: Int
     let thumbnailData: Data?
 
-    static func == (lhs: FaceEntry, rhs: FaceEntry) -> Bool {
-        lhs.id == rhs.id
+    var id: UUID { groupId }
+
+    static func == (lhs: FaceGroupEntry, rhs: FaceGroupEntry) -> Bool {
+        lhs.groupId == rhs.groupId
     }
 }

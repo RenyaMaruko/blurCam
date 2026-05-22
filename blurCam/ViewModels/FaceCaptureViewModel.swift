@@ -2,30 +2,30 @@ import AVFoundation
 import Foundation
 import SwiftUI
 
-/// ViewModel responsible for managing face capture operations.
-/// Handles front camera setup, real-time face detection, and face image capture/storage.
+/// ViewModel responsible for managing multi-angle face capture.
+/// Captures 3 photos (front, slight left, slight right) for robust face recognition.
 @MainActor
 final class FaceCaptureViewModel: ObservableObject {
 
     // MARK: - Published Properties
 
-    /// Whether the front camera has been configured
     @Published private(set) var isCameraConfigured: Bool = false
-
-    /// Whether a face is currently detected in the camera feed
     @Published private(set) var isFaceDetected: Bool = false
-
-    /// Whether a capture is currently in progress
     @Published private(set) var isCapturing: Bool = false
-
-    /// Whether the face has been successfully saved
     @Published private(set) var isFaceSaved: Bool = false
-
-    /// Error message to display, if any
     @Published private(set) var errorMessage: String?
+    @Published private(set) var guidanceText: String = "正面を向いてください"
 
-    /// Guidance text shown to the user
-    @Published private(set) var guidanceText: String = "顔をフレーム内に合わせてください"
+    /// Current capture step (1, 2, or 3)
+    @Published private(set) var currentStep: Int = 1
+
+    /// Total number of captures required
+    let totalSteps: Int = 3
+
+    /// Progress (0.0 to 1.0)
+    var progress: Float {
+        Float(currentStep - 1) / Float(totalSteps)
+    }
 
     // MARK: - Dependencies
 
@@ -33,9 +33,19 @@ final class FaceCaptureViewModel: ObservableObject {
     private let faceDetectionService: FaceDetectionServiceProtocol
     private let faceRepository: FaceRepositoryProtocol
 
+    // MARK: - Private
+
+    private var capturedImages: [Data] = []
+    private let groupId = UUID()
+
+    private let stepGuidance: [String] = [
+        "正面を向いてください",
+        "少し左を向いてください",
+        "少し右を向いてください"
+    ]
+
     // MARK: - Public Properties
 
-    /// The AVCaptureSession for the camera preview
     var captureSession: AVCaptureSession {
         faceCaptureService.captureSession
     }
@@ -56,17 +66,15 @@ final class FaceCaptureViewModel: ObservableObject {
 
     // MARK: - Public Methods
 
-    /// Sets up and starts the front camera with face detection
     func setupCamera() {
         guard !isCameraConfigured else { return }
 
         do {
             try faceCaptureService.configure()
             isCameraConfigured = true
-            faceCaptureService.start()
-
-            // Start face detection on the capture session
+            // Add detection output BEFORE starting session to avoid configuration conflicts
             try faceDetectionService.startDetection(on: faceCaptureService.captureSession)
+            faceCaptureService.start()
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -74,13 +82,12 @@ final class FaceCaptureViewModel: ObservableObject {
         }
     }
 
-    /// Stops the camera and face detection
     func stopCamera() {
         faceDetectionService.stopDetection()
         faceCaptureService.stop()
     }
 
-    /// Captures the current frame and saves the face data
+    /// Captures the current frame for the current step
     func captureAndSaveFace() async {
         guard !isCapturing else { return }
         guard isFaceDetected else {
@@ -93,28 +100,36 @@ final class FaceCaptureViewModel: ObservableObject {
         guidanceText = "撮影中..."
 
         do {
-            // Capture photo from front camera
             let imageData = try await faceCaptureService.capturePhoto()
 
-            // Verify face exists in the captured image
             let hasFace = faceDetectionService.detectFace(in: imageData)
             guard hasFace else {
                 errorMessage = "撮影された画像に顔が検出されませんでした。もう一度お試しください。"
                 isCapturing = false
-                guidanceText = "顔をフレーム内に合わせてください"
+                guidanceText = stepGuidance[currentStep - 1]
                 return
             }
 
-            // Save face data locally
-            try faceRepository.saveFace(imageData)
+            capturedImages.append(imageData)
 
-            isFaceSaved = true
-            isCapturing = false
-            guidanceText = "顔の登録が完了しました"
+            if currentStep < totalSteps {
+                // Move to next step
+                currentStep += 1
+                isCapturing = false
+                guidanceText = stepGuidance[currentStep - 1]
+            } else {
+                // All photos captured - save all with same groupId
+                for imageData in capturedImages {
+                    try faceRepository.saveFace(imageData, groupId: groupId)
+                }
+                isFaceSaved = true
+                isCapturing = false
+                guidanceText = "顔の登録が完了しました"
+            }
         } catch {
             errorMessage = error.localizedDescription
             isCapturing = false
-            guidanceText = "顔をフレーム内に合わせてください"
+            guidanceText = stepGuidance[currentStep - 1]
         }
     }
 
@@ -126,9 +141,9 @@ final class FaceCaptureViewModel: ObservableObject {
                 guard let self, !self.isCapturing, !self.isFaceSaved else { return }
                 self.isFaceDetected = detected
                 if detected {
-                    self.guidanceText = "そのままの位置でシャッターボタンをタップしてください"
+                    self.guidanceText = "そのままシャッターをタップ (\(self.currentStep)/\(self.totalSteps))"
                 } else {
-                    self.guidanceText = "顔をフレーム内に合わせてください"
+                    self.guidanceText = self.stepGuidance[self.currentStep - 1]
                 }
             }
         }

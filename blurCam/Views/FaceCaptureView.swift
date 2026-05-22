@@ -147,6 +147,17 @@ struct FaceCaptureView: View {
                         .fill(Color.black.opacity(0.55))
                 )
                 .accessibilityIdentifier("guidanceText")
+
+            // Step progress indicator
+            HStack(spacing: DesignTokens.Spacing.space2) {
+                ForEach(1...viewModel.totalSteps, id: \.self) { step in
+                    Circle()
+                        .fill(step <= viewModel.currentStep ? Color.white : Color.white.opacity(0.3))
+                        .frame(width: 8, height: 8)
+                        .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: viewModel.currentStep)
+                }
+            }
+            .padding(.top, DesignTokens.Spacing.space2)
         }
         .padding(.bottom, DesignTokens.Spacing.space8)
         .opacity(controlsOpacity)

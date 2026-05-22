@@ -8,11 +8,13 @@ protocol FaceRepositoryProtocol: Sendable {
     func hasFaceRegistered() -> Bool
 
     /// Saves face image data and creates a registration record.
-    /// - Parameter imageData: The JPEG image data of the captured face
+    /// - Parameters:
+    ///   - imageData: The JPEG image data of the captured face
+    ///   - groupId: Optional group ID to associate multiple photos of the same person
     /// - Returns: The created FaceRegistration record
     /// - Throws: FaceRepositoryError if saving fails
     @discardableResult
-    func saveFace(_ imageData: Data) throws -> FaceRegistration
+    func saveFace(_ imageData: Data, groupId: UUID?) throws -> FaceRegistration
 
     /// Loads the current face registration, if one exists (first registered face)
     func loadRegistration() -> FaceRegistration?
