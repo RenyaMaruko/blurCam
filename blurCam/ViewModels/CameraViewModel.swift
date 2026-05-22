@@ -150,23 +150,28 @@ final class CameraViewModel: ObservableObject {
     func capturePhoto() async {
         guard captureState != .capturing else { return }
 
+        // Immediate visual feedback — button animates and returns instantly
         captureState = .capturing
         errorMessage = nil
+
+        // Return button to normal quickly so it doesn't feel stuck
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+            if captureState == .capturing {
+                captureState = .idle
+            }
+        }
 
         // Check photo library permission first
         let photoPermission = permissionRepository.photoLibraryPermissionStatus()
         if photoPermission == .notDetermined {
             let newStatus = await permissionRepository.requestPhotoLibraryPermission()
             if newStatus == .denied {
-                captureState = .failed("フォトライブラリへのアクセスが拒否されました")
                 errorMessage = "フォトライブラリへのアクセスが拒否されました"
-                resetCaptureStateAfterDelay()
                 return
             }
         } else if photoPermission == .denied {
-            captureState = .failed("フォトライブラリへのアクセスが拒否されました")
             errorMessage = "フォトライブラリへのアクセスが拒否されました"
-            resetCaptureStateAfterDelay()
             return
         }
 
@@ -178,21 +183,15 @@ final class CameraViewModel: ObservableObject {
             if let blurredData = videoFrameProcessor.processStillImage(imageData) {
                 processedData = blurredData
             } else {
-                // Fall back to original data if processing fails
                 processedData = imageData
             }
 
             try await photoRepository.savePhoto(processedData)
-            captureState = .captured
 
             // Update the latest media thumbnail
             loadLatestMedia()
-
-            resetCaptureStateAfterDelay()
         } catch {
-            captureState = .failed(error.localizedDescription)
             errorMessage = error.localizedDescription
-            resetCaptureStateAfterDelay()
         }
     }
 
@@ -200,18 +199,15 @@ final class CameraViewModel: ObservableObject {
     func handleShutterAction() {
         switch cameraMode {
         case .photo:
-            Task {
-                await capturePhoto()
-            }
+            // Fire and forget — button returns immediately
+            Task { await capturePhoto() }
         case .video:
             if isRecording {
-                Task {
-                    await stopRecording()
-                }
+                // Immediate UI feedback for stop
+                captureState = .stoppingRecording
+                Task { await stopRecording() }
             } else {
-                Task {
-                    await startRecording()
-                }
+                Task { await startRecording() }
             }
         }
     }

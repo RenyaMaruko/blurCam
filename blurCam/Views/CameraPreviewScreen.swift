@@ -200,6 +200,7 @@ struct CameraPreviewScreen: View {
                 endPoint: .bottom
             )
             .frame(height: 80)
+            .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
         )
         .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.isRecording)
