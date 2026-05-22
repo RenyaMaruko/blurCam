@@ -44,6 +44,7 @@
 		5F473401405F2498C678EA09 /* CameraViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22926E2442D90F8D677D1E3A /* CameraViewModelTests.swift */; };
 		611C00E374537A9A350CD948 /* FaceRecognitionServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7FBC6FB0FACD63AE624B11 /* FaceRecognitionServiceProtocol.swift */; };
 		626BAB7117B7DCD8D1F4468E /* VideoFrameProcessorProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E4AC0E3235766C7E620DF5 /* VideoFrameProcessorProtocol.swift */; };
+		63098EFE3BFA5AC6A33EFF65 /* FaceNet.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 91E05D37A093E197A7BE6120 /* FaceNet.mlpackage */; };
 		68216E1A70400F5BC39AACA9 /* PermissionRepositoryProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E5434839A5E4F219B587D67 /* PermissionRepositoryProtocol.swift */; };
 		6D13EB70992ACCEF517C0635 /* VideoRecordingServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = F36950E0B0CA8D89C0CBF1AC /* VideoRecordingServiceProtocol.swift */; };
 		7636556005CCCDE3CF260B32 /* DetectedFace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07178B4B56DA8E3A8AC58E57 /* DetectedFace.swift */; };
@@ -77,6 +78,7 @@
 		C1023C11D0354ACC1CE498A7 /* BlurProcessingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBE7B38AA08295968D234B6 /* BlurProcessingService.swift */; };
 		C27F5D999CF3FF1466094DC6 /* FaceDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B7D1D49ED744DEB9AD7FB57 /* FaceDetectionService.swift */; };
 		C8DA6A44608722367EA4E0F1 /* MockBlurSettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = D984A8E96FFD4BEFC147C2AB /* MockBlurSettingsRepository.swift */; };
+		C9A10AE1D2338FACD845BC2F /* MobileFaceNet.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = C1F65A4007661CAA83BDD224 /* MobileFaceNet.mlpackage */; };
 		CBE437DD87E1EDA6447A9108 /* FaceCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1052803A120A17FE6206FD71 /* FaceCaptureService.swift */; };
 		CC0CB9F2BFC930EF0A302CBE /* OnboardingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E754F72CCD20C384C0EF853B /* OnboardingViewModel.swift */; };
 		CC537A00B330C3BF7C6A1942 /* MockFaceRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B516173D0E1F8BE63401B8 /* MockFaceRepository.swift */; };
@@ -159,6 +161,7 @@
 		795F637200E574E67CA06CD9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		7FB96223A2B8001128EA271E /* PermissionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionViewModel.swift; sourceTree = "<group>"; };
 		8506627592D7CBEF1E8B61F6 /* MockCameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockCameraService.swift; sourceTree = "<group>"; };
+		91E05D37A093E197A7BE6120 /* FaceNet.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FaceNet.mlpackage; sourceTree = "<group>"; };
 		92EA47914994D167F5AEB673 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		97E4AC0E3235766C7E620DF5 /* VideoFrameProcessorProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFrameProcessorProtocol.swift; sourceTree = "<group>"; };
 		980B99437EFC7B89DB11C551 /* MockPermissionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPermissionRepository.swift; sourceTree = "<group>"; };
@@ -178,6 +181,7 @@
 		BDD29708C825F69E7C192453 /* blurCamApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = blurCamApp.swift; sourceTree = "<group>"; };
 		BF403AA8447C8BD891875BF6 /* BlurSettingsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlurSettingsRepository.swift; sourceTree = "<group>"; };
 		C0ECCF8A966D65DD0D71FA96 /* VideoFrameProcessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFrameProcessorTests.swift; sourceTree = "<group>"; };
+		C1F65A4007661CAA83BDD224 /* MobileFaceNet.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = MobileFaceNet.mlpackage; sourceTree = "<group>"; };
 		C3318AC2C92250B9BEBC9AA0 /* MockBlurProcessingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockBlurProcessingService.swift; sourceTree = "<group>"; };
 		CFD5B123AB6F2CA1D4814088 /* CameraPermissionRequestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPermissionRequestView.swift; sourceTree = "<group>"; };
 		D7748E800F6237FD6CAD5880 /* CameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraService.swift; sourceTree = "<group>"; };
@@ -341,7 +345,9 @@
 			isa = PBXGroup;
 			children = (
 				E9A9C7E2F602D595FC5B6920 /* Assets.xcassets */,
+				91E05D37A093E197A7BE6120 /* FaceNet.mlpackage */,
 				92EA47914994D167F5AEB673 /* Info.plist */,
+				C1F65A4007661CAA83BDD224 /* MobileFaceNet.mlpackage */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -517,6 +523,7 @@
 				3743417E630A450ED06B4303 /* FaceCaptureViewModel.swift in Sources */,
 				C27F5D999CF3FF1466094DC6 /* FaceDetectionService.swift in Sources */,
 				223D8CDB9640FAFE5723BD4B /* FaceDetectionServiceProtocol.swift in Sources */,
+				63098EFE3BFA5AC6A33EFF65 /* FaceNet.mlpackage in Sources */,
 				F7E436C527EA15D2C8492149 /* FaceRecognitionService.swift in Sources */,
 				611C00E374537A9A350CD948 /* FaceRecognitionServiceProtocol.swift in Sources */,
 				785CA00F9BCAD29B135500A1 /* FaceRegistration.swift in Sources */,
@@ -526,6 +533,7 @@
 				E90654AB73BFE4D3D618809A /* MediaItem.swift in Sources */,
 				2EAA94C7C42FAE9F5BA045D7 /* MediaPreviewView.swift in Sources */,
 				42EFAEB928ADAA40B3D8AB24 /* MicrophonePermissionStatus.swift in Sources */,
+				C9A10AE1D2338FACD845BC2F /* MobileFaceNet.mlpackage in Sources */,
 				12A3507C60C570019CF35644 /* ModeSelectorView.swift in Sources */,
 				E6F986B083AE8CEF7ED99A56 /* OnboardingFlowView.swift in Sources */,
 				CC0CB9F2BFC930EF0A302CBE /* OnboardingViewModel.swift in Sources */,

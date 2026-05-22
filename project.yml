@@ -24,6 +24,7 @@ targets:
           - "**/.DS_Store"
     resources:
       - path: blurCam/Resources/Assets.xcassets
+      - path: blurCam/Resources/FaceNet.mlpackage
       - path: blurCam/Resources/Info.plist
         buildPhase: none
     settings:

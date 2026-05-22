@@ -129,9 +129,9 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
-    /// Starts the camera session
+    /// Starts the camera session (safe to call multiple times)
     func startCamera() {
-        guard isCameraConfigured else { return }
+        guard isCameraConfigured, !cameraService.isRunning else { return }
         cameraService.start()
     }
 
@@ -329,35 +329,36 @@ final class CameraViewModel: ObservableObject {
 
         isSwitchingCamera = true
 
-        // Stop everything before switching
+        let session = cameraService.captureSession
+
+        // Stop session synchronously to prevent beginConfiguration/startRunning conflicts
+        session.stopRunning()
+
+        // Remove video output while stopped
         videoFrameProcessor.stopProcessing()
-        cameraService.stop()
 
         do {
             let newPosition = try cameraService.switchCamera()
             cameraPosition = newPosition
             hasFlash = cameraService.hasFlash
 
-            // If front camera has no flash, reset flash mode to off
             if !hasFlash && flashMode != .off {
                 flashMode = .off
                 cameraService.flashMode = .off
             }
 
-            // Restart frame processing with the reconfigured session
-            try videoFrameProcessor.startProcessing(on: cameraService.captureSession)
+            // Re-add video output (with mirroring disabled for consistent recognition)
+            try videoFrameProcessor.startProcessing(on: session)
 
-            // Restart camera
-            cameraService.start()
-
-            // Reload registered face data for the new camera
+            // Reload registered face data
             loadRegisteredFaceData()
 
         } catch {
             errorMessage = error.localizedDescription
-            // Try to restart camera even on error
-            cameraService.start()
         }
+
+        // Restart session after all configuration is complete
+        session.startRunning()
 
         // End the switching animation after a short delay
         Task {

@@ -1,32 +1,56 @@
 import CoreGraphics
 import CoreImage
+import CoreML
 import CoreVideo
 import Foundation
 import UIKit
 import Vision
 
-/// Concrete implementation of FaceRecognitionServiceProtocol using Vision framework.
+/// Face recognition using FaceNet CoreML model.
 ///
-/// Detection strategy:
-/// 1. VNDetectFaceLandmarksRequest detects faces and extracts 2D landmarks
-/// 2. Normalizes landmark positions to create a face geometry signature
-/// 3. Compares each detected face's geometry against all registered faces' geometries
-/// 4. If geometry distance is below the threshold, the face is considered "registered"
+/// Strategy:
+/// 1. VNDetectFaceRectanglesRequest detects all faces in a frame
+/// 2. Each detected face is cropped and resized to 160x160
+/// 3. FaceNet model generates a 128-dimensional embedding vector
+/// 4. Embeddings are compared using cosine similarity
+/// 5. If similarity exceeds the threshold, the face is "registered"
 final class FaceRecognitionService: FaceRecognitionServiceProtocol {
 
     // MARK: - Properties
 
     private(set) var hasRegisteredFace: Bool = false
 
-    /// Stored face geometry signatures for all registered faces
-    private var registeredSignatures: [[Float]] = []
+    /// Stored 128-dim embedding vectors for all registered faces
+    private var registeredEmbeddings: [[Float]] = []
 
-    /// Geometry distance threshold for face matching.
-    /// Lower = stricter matching. Tuned for normalized landmark comparison.
-    private let matchingThreshold: Float = 1.25
+    /// Cosine similarity threshold. Same person: >0.6, different person: <0.4 typically
+    private let similarityThreshold: Float = 0.4
 
-    /// CIContext for image processing, reused for performance
+    /// CoreML model for face embedding
+    private var faceNetModel: MLModel?
+
+    /// CIContext for image processing
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+
+    // MARK: - Initialization
+
+    init() {
+        loadModel()
+    }
+
+    private func loadModel() {
+        do {
+            let config = MLModelConfiguration()
+            config.computeUnits = .cpuAndNeuralEngine
+            // Xcode auto-generates a class from the .mlpackage
+            // The class name matches the file name: FaceNet
+            let model = try FaceNet(configuration: config)
+            faceNetModel = model.model
+            print("[FaceRecognition] FaceNet model loaded successfully")
+        } catch {
+            print("[FaceRecognition] Failed to load FaceNet model: \(error)")
+        }
+    }
 
     // MARK: - FaceRecognitionServiceProtocol
 
@@ -35,69 +59,63 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
     }
 
     func loadRegisteredFaces(from faceImageDataArray: [Data]) {
-        registeredSignatures = []
+        registeredEmbeddings = []
 
         for faceImageData in faceImageDataArray {
-            guard let cgImage = createCGImage(from: faceImageData) else {
-                continue
-            }
+            guard let cgImage = createCGImage(from: faceImageData) else { continue }
 
-            if let signature = extractFaceSignature(from: cgImage) {
-                registeredSignatures.append(signature)
+            // Detect face, crop, and get embedding
+            if let embedding = extractEmbedding(fromFaceImage: cgImage) {
+                registeredEmbeddings.append(embedding)
             }
         }
 
-        hasRegisteredFace = !registeredSignatures.isEmpty
+        hasRegisteredFace = !registeredEmbeddings.isEmpty
+        print("[FaceRecognition] Loaded \(registeredEmbeddings.count) registered embedding(s)")
     }
 
     func detectAndIdentifyFaces(
         in pixelBuffer: CVPixelBuffer,
         orientation: CGImagePropertyOrientation
     ) -> [DetectedFace] {
-        let landmarksRequest = VNDetectFaceLandmarksRequest()
-        let handler = VNImageRequestHandler(
-            cvPixelBuffer: pixelBuffer,
-            orientation: orientation,
-            options: [:]
-        )
+        // Step 1: Detect face rectangles
+        let faceRequest = VNDetectFaceRectanglesRequest()
+        faceRequest.revision = VNDetectFaceRectanglesRequestRevision3
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: orientation, options: [:])
 
         do {
-            try handler.perform([landmarksRequest])
+            try handler.perform([faceRequest])
         } catch {
             return []
         }
 
-        guard let faceObservations = landmarksRequest.results, !faceObservations.isEmpty else {
+        guard let observations = faceRequest.results, !observations.isEmpty else {
             return []
         }
 
-        // If we don't have any registered faces, all detected faces are unregistered
-        guard hasRegisteredFace, !registeredSignatures.isEmpty else {
-            return faceObservations.map { observation in
-                DetectedFace(
-                    boundingBox: observation.boundingBox,
-                    isRegistered: false,
-                    confidence: observation.confidence
-                )
+        guard hasRegisteredFace, !registeredEmbeddings.isEmpty, faceNetModel != nil else {
+            return observations.map {
+                DetectedFace(boundingBox: $0.boundingBox, isRegistered: false, confidence: $0.confidence)
             }
         }
 
-        return faceObservations.map { observation in
-            let isRegistered = checkFaceMatch(observation: observation)
+        // Step 2: For each face, crop, embed, compare
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let imageWidth = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let imageHeight = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
 
-            return DetectedFace(
-                boundingBox: observation.boundingBox,
-                isRegistered: isRegistered,
-                confidence: observation.confidence
-            )
+        return observations.map { obs in
+            let isRegistered = checkMatch(observation: obs, ciImage: ciImage, width: imageWidth, height: imageHeight)
+            return DetectedFace(boundingBox: obs.boundingBox, isRegistered: isRegistered, confidence: obs.confidence)
         }
     }
 
-    // MARK: - Face Signature Extraction
+    // MARK: - Embedding Extraction
 
-    /// Extracts a normalized face geometry signature from a CGImage.
-    private func extractFaceSignature(from cgImage: CGImage) -> [Float]? {
-        let request = VNDetectFaceLandmarksRequest()
+    /// Extracts a 128-dim embedding from a face image (full image with a face in it).
+    private func extractEmbedding(fromFaceImage cgImage: CGImage) -> [Float]? {
+        // Detect face in the image first
+        let request = VNDetectFaceRectanglesRequest()
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 
         do {
@@ -106,203 +124,175 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
             return nil
         }
 
-        guard let face = request.results?.first,
-              let landmarks = face.landmarks else {
-            return nil
-        }
+        guard let face = request.results?.first else { return nil }
 
-        return computeSignature(from: landmarks, boundingBox: face.boundingBox)
+        let ciImage = CIImage(cgImage: cgImage)
+        let w = CGFloat(cgImage.width)
+        let h = CGFloat(cgImage.height)
+
+        return computeEmbedding(boundingBox: face.boundingBox, ciImage: ciImage, imageWidth: w, imageHeight: h)
     }
 
-    /// Checks if a detected face matches any registered face by comparing landmark geometry.
-    private func checkFaceMatch(observation: VNFaceObservation) -> Bool {
-        guard let landmarks = observation.landmarks else {
+    /// Checks if a detected face matches any registered face.
+    private func checkMatch(
+        observation: VNFaceObservation,
+        ciImage: CIImage,
+        width: CGFloat,
+        height: CGFloat
+    ) -> Bool {
+        guard let embedding = computeEmbedding(
+            boundingBox: observation.boundingBox,
+            ciImage: ciImage,
+            imageWidth: width,
+            imageHeight: height
+        ) else {
             return false
         }
 
-        let candidateSignature = computeSignature(from: landmarks, boundingBox: observation.boundingBox)
-
-        var minDistance: Float = Float.greatestFiniteMagnitude
-        for registeredSig in registeredSignatures {
-            let distance = euclideanDistance(candidateSignature, registeredSig)
-            if distance < minDistance {
-                minDistance = distance
+        // Compare against all registered embeddings using cosine similarity
+        var maxSimilarity: Float = -1
+        for regEmb in registeredEmbeddings {
+            let sim = cosineSimilarity(embedding, regEmb)
+            if sim > maxSimilarity {
+                maxSimilarity = sim
             }
         }
 
-        let isMatch = minDistance < matchingThreshold
-        print("[FaceRecognition] distance=\(String(format: "%.4f", minDistance)), threshold=\(matchingThreshold), isMatch=\(isMatch)")
+        let isMatch = maxSimilarity > similarityThreshold
+        print("[FaceRecognition] similarity=\(String(format: "%.3f", maxSimilarity)), threshold=\(similarityThreshold), isMatch=\(isMatch)")
         return isMatch
     }
 
-    /// Computes a normalized face geometry signature from 2D landmarks.
-    /// The signature captures facial proportions (ratios) that are unique to each person
-    /// and invariant to scale, position, and (somewhat) rotation.
-    private func computeSignature(from landmarks: VNFaceLandmarks2D, boundingBox: CGRect) -> [Float] {
-        var signature: [Float] = []
+    /// Crops a face from the image, resizes to 160x160, and runs FaceNet to get embedding.
+    private func computeEmbedding(
+        boundingBox: CGRect,
+        ciImage: CIImage,
+        imageWidth: CGFloat,
+        imageHeight: CGFloat
+    ) -> [Float]? {
+        guard let model = faceNetModel else { return nil }
 
-        // Get key landmark regions (normalized 0-1 coordinates within the face bounding box)
-        var leftEye = centerPoint(of: landmarks.leftEye)
-        var rightEye = centerPoint(of: landmarks.rightEye)
-        let nose = centerPoint(of: landmarks.nose)
-        let noseCrest = centerPoint(of: landmarks.noseCrest)
-        let outerLips = centerPoint(of: landmarks.outerLips)
-        let innerLips = centerPoint(of: landmarks.innerLips)
-        var leftEyebrow = centerPoint(of: landmarks.leftEyebrow)
-        var rightEyebrow = centerPoint(of: landmarks.rightEyebrow)
-        let faceContour = landmarks.faceContour
+        // Convert Vision normalized rect to pixel coordinates
+        let faceRect = VNImageRectForNormalizedRect(boundingBox, Int(imageWidth), Int(imageHeight))
 
-        guard let le = leftEye, let re = rightEye, let n = nose else {
-            return signature
+        // Expand slightly for better context
+        let expandedRect = faceRect.insetBy(dx: -faceRect.width * 0.2, dy: -faceRect.height * 0.2)
+            .intersection(ciImage.extent)
+        guard !expandedRect.isEmpty, expandedRect.width > 10, expandedRect.height > 10 else { return nil }
+
+        // Crop face
+        let cropped = ciImage.cropped(to: expandedRect)
+
+        // Resize to 160x160
+        let scaleX = 160.0 / cropped.extent.width
+        let scaleY = 160.0 / cropped.extent.height
+        let resized = cropped
+            .transformed(by: CGAffineTransform(translationX: -cropped.extent.origin.x, y: -cropped.extent.origin.y))
+            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+
+        // Render to pixel buffer
+        guard let pixelBuffer = createPixelBuffer(width: 160, height: 160) else { return nil }
+        ciContext.render(resized, to: pixelBuffer)
+
+        // Convert pixel buffer to MLMultiArray (1, 160, 160, 3) with float32, normalized to [-1, 1]
+        guard let multiArray = pixelBufferToMultiArray(pixelBuffer) else { return nil }
+
+        // Run inference
+        do {
+            let input = try MLDictionaryFeatureProvider(dictionary: ["face_image": multiArray])
+            let output = try model.prediction(from: input)
+
+            // Extract embedding from output (auto-generated output name from ONNX conversion)
+            guard let embeddingFeature = output.featureValue(for: "var_1980"),
+                  let embeddingArray = embeddingFeature.multiArrayValue else {
+                return nil
+            }
+
+            // Convert MLMultiArray to [Float]
+            let count = embeddingArray.count
+            var embedding = [Float](repeating: 0, count: count)
+            for i in 0..<count {
+                embedding[i] = embeddingArray[i].floatValue
+            }
+
+            // L2 normalize
+            let norm = sqrt(embedding.reduce(0) { $0 + $1 * $1 })
+            if norm > 0 {
+                embedding = embedding.map { $0 / norm }
+            }
+
+            return embedding
+        } catch {
+            print("[FaceRecognition] Inference error: \(error)")
+            return nil
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func createPixelBuffer(width: Int, height: Int) -> CVPixelBuffer? {
+        var buffer: CVPixelBuffer?
+        let attrs: [String: Any] = [
+            kCVPixelBufferCGImageCompatibilityKey as String: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
+        ]
+        let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height,
+                                         kCVPixelFormatType_32BGRA, attrs as CFDictionary, &buffer)
+        return status == kCVReturnSuccess ? buffer : nil
+    }
+
+    /// Converts a 160x160 BGRA pixel buffer to MLMultiArray (1, 160, 160, 3) normalized to [-1, 1]
+    private func pixelBufferToMultiArray(_ pixelBuffer: CVPixelBuffer) -> MLMultiArray? {
+        CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+
+        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
+
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+
+        guard let multiArray = try? MLMultiArray(shape: [1, 160, 160, 3], dataType: .float32) else {
+            return nil
         }
 
-        // === Mirror-invariant normalization ===
-        // Always ensure "eye1" has smaller x than "eye2" to handle front/back camera mirroring
-        let eye1: CGPoint
-        let eye2: CGPoint
-        let eyebrow1: CGPoint?
-        let eyebrow2: CGPoint?
-        if le.x <= re.x {
-            eye1 = le; eye2 = re
-            eyebrow1 = leftEyebrow; eyebrow2 = rightEyebrow
-        } else {
-            eye1 = re; eye2 = le
-            eyebrow1 = rightEyebrow; eyebrow2 = leftEyebrow
-        }
+        let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
 
-        // Inter-eye distance as the normalization base
-        let eyeDist = distance(eye1, eye2)
-        guard eyeDist > 0.001 else { return signature }
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = y * bytesPerRow + x * 4
+                // BGRA format
+                let b = Float(pixels[offset]) / 127.5 - 1.0
+                let g = Float(pixels[offset + 1]) / 127.5 - 1.0
+                let r = Float(pixels[offset + 2]) / 127.5 - 1.0
 
-        // Midpoint between eyes
-        let eyeCenter = CGPoint(x: (eye1.x + eye2.x) / 2, y: (eye1.y + eye2.y) / 2)
-
-        // === Facial Proportions (mirror-invariant, normalized by inter-eye distance) ===
-
-        // 1. Nose position relative to eye center (use abs(x) for mirror invariance)
-        signature.append(Float(abs(n.x - eyeCenter.x) / eyeDist))
-        signature.append(Float((n.y - eyeCenter.y) / eyeDist))
-
-        // 2. Mouth position relative to eye center
-        if let ol = outerLips {
-            signature.append(Float(abs(ol.x - eyeCenter.x) / eyeDist))
-            signature.append(Float((ol.y - eyeCenter.y) / eyeDist))
-        }
-
-        // 3. Inner lips position (mouth shape)
-        if let il = innerLips {
-            signature.append(Float(abs(il.x - eyeCenter.x) / eyeDist))
-            signature.append(Float((il.y - eyeCenter.y) / eyeDist))
-        }
-
-        // 4. Nose crest position
-        if let nc = noseCrest {
-            signature.append(Float(abs(nc.x - eyeCenter.x) / eyeDist))
-            signature.append(Float((nc.y - eyeCenter.y) / eyeDist))
-        }
-
-        // 5. Eyebrow heights relative to eyes (sorted consistently)
-        if let eb1 = eyebrow1 {
-            signature.append(Float((eb1.y - eye1.y) / eyeDist))
-        }
-        if let eb2 = eyebrow2 {
-            signature.append(Float((eb2.y - eye2.y) / eyeDist))
-        }
-
-        // 6. Eye aspect ratios (use sorted order: smaller x eye first)
-        let eyeRegions: [VNFaceLandmarkRegion2D?]
-        if (leftEye?.x ?? 0) <= (rightEye?.x ?? 0) {
-            eyeRegions = [landmarks.leftEye, landmarks.rightEye]
-        } else {
-            eyeRegions = [landmarks.rightEye, landmarks.leftEye]
-        }
-        for eyeRegion in eyeRegions {
-            if let region = eyeRegion {
-                let (w, h) = regionSpan(region)
-                signature.append(Float(h / max(w, 0.001)))
+                // NHWC format: (0, y, x, channel)
+                let baseIdx = y * width * 3 + x * 3
+                multiArray[baseIdx] = NSNumber(value: r)
+                multiArray[baseIdx + 1] = NSNumber(value: g)
+                multiArray[baseIdx + 2] = NSNumber(value: b)
             }
         }
 
-        // 7. Mouth aspect ratio (symmetric, no mirror issue)
-        if let outerLipsRegion = landmarks.outerLips {
-            let (w, h) = regionSpan(outerLipsRegion)
-            signature.append(Float(h / max(w, 0.001)))
-        }
-
-        // 8. Nose width relative to eye distance (symmetric)
-        if let noseRegion = landmarks.nose {
-            let (w, _) = regionSpan(noseRegion)
-            signature.append(Float(w / eyeDist))
-        }
-
-        // 9. Face contour shape ratios (symmetric measurements only)
-        if let contour = faceContour, contour.pointCount >= 10 {
-            let faceWidth = regionSpan(contour).0
-            let faceHeight = regionSpan(contour).1
-            guard faceWidth > 0.001 else { return signature }
-
-            // Face height-to-width ratio (symmetric)
-            signature.append(Float(faceHeight / faceWidth))
-
-            // Jaw width at bottom third (symmetric)
-            let quarterIdx = contour.pointCount / 4
-            let threeQuarterIdx = (contour.pointCount * 3) / 4
-            let jawWidth = abs(contour.normalizedPoints[quarterIdx].x - contour.normalizedPoints[threeQuarterIdx].x)
-            signature.append(Float(jawWidth / faceWidth))
-        }
-
-        return signature
+        return multiArray
     }
 
-    // MARK: - Geometry Helpers
-
-    private func centerPoint(of region: VNFaceLandmarkRegion2D?) -> CGPoint? {
-        guard let region = region, region.pointCount > 0 else { return nil }
-        var sumX: CGFloat = 0
-        var sumY: CGFloat = 0
-        for i in 0..<region.pointCount {
-            let p = region.normalizedPoints[i]
-            sumX += p.x
-            sumY += p.y
+    private func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+        var dot: Float = 0
+        var normA: Float = 0
+        var normB: Float = 0
+        for i in 0..<a.count {
+            dot += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
         }
-        return CGPoint(x: sumX / CGFloat(region.pointCount), y: sumY / CGFloat(region.pointCount))
-    }
-
-    private func regionSpan(_ region: VNFaceLandmarkRegion2D) -> (width: CGFloat, height: CGFloat) {
-        guard region.pointCount > 0 else { return (0, 0) }
-        var minX: CGFloat = .greatestFiniteMagnitude
-        var maxX: CGFloat = -.greatestFiniteMagnitude
-        var minY: CGFloat = .greatestFiniteMagnitude
-        var maxY: CGFloat = -.greatestFiniteMagnitude
-        for i in 0..<region.pointCount {
-            let p = region.normalizedPoints[i]
-            minX = min(minX, p.x)
-            maxX = max(maxX, p.x)
-            minY = min(minY, p.y)
-            maxY = max(maxY, p.y)
-        }
-        return (maxX - minX, maxY - minY)
-    }
-
-    private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
-        sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y))
-    }
-
-    private func euclideanDistance(_ a: [Float], _ b: [Float]) -> Float {
-        let count = min(a.count, b.count)
-        guard count > 0 else { return Float.greatestFiniteMagnitude }
-        var sum: Float = 0
-        for i in 0..<count {
-            let diff = a[i] - b[i]
-            sum += diff * diff
-        }
-        return sqrt(sum / Float(count))
+        let denom = sqrt(normA) * sqrt(normB)
+        return denom > 0 ? dot / denom : 0
     }
 
     private func createCGImage(from data: Data) -> CGImage? {
-        guard let uiImage = UIImage(data: data) else {
-            return nil
-        }
+        guard let uiImage = UIImage(data: data) else { return nil }
         return uiImage.cgImage
     }
 }

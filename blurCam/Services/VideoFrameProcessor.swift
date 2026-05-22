@@ -113,32 +113,27 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
         ]
 
-        // Stop session before configuration to avoid conflicts
-        let wasRunning = session.isRunning
-        if wasRunning {
-            session.stopRunning()
-        }
-
+        // NOTE: Caller is responsible for stopping/starting the session.
+        // Do NOT call stopRunning/startRunning here to avoid threading conflicts.
         session.beginConfiguration()
         guard session.canAddOutput(videoOutput) else {
             session.commitConfiguration()
-            if wasRunning { session.startRunning() }
             throw VideoFrameProcessorError.cannotAddVideoOutput
         }
         session.addOutput(videoOutput)
 
-        // Set video orientation
+        // Set video orientation and disable mirroring for consistent face recognition
         if let connection = videoOutput.connection(with: .video) {
             if connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
             }
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
         }
 
         session.commitConfiguration()
-
-        if wasRunning {
-            session.startRunning()
-        }
 
         captureSession = session
         isProcessingActive = true
@@ -147,18 +142,9 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
     func stopProcessing() {
         guard isProcessingActive, let session = captureSession else { return }
 
-        let wasRunning = session.isRunning
-        if wasRunning {
-            session.stopRunning()
-        }
-
         session.beginConfiguration()
         session.removeOutput(videoOutput)
         session.commitConfiguration()
-
-        if wasRunning {
-            session.startRunning()
-        }
 
         isProcessingActive = false
         cachedFaces = []
