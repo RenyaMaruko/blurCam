@@ -56,6 +56,11 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
         label: "com.blurCam.audioProcessingQueue",
         qos: .userInteractive
     )
+    private let recognitionQueue = DispatchQueue(
+        label: "com.blurCam.faceRecognitionQueue",
+        qos: .userInitiated
+    )
+    private var isRecognitionBusy = false
     private var isProcessingActive = false
     private weak var captureSession: AVCaptureSession?
 
@@ -381,20 +386,24 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
         videoWidth = imageWidth
         videoHeight = imageHeight
 
-        if shouldDetect {
+        if shouldDetect && !isRecognitionBusy {
             lastDetectionTime = currentTime
+            isRecognitionBusy = true
 
-            // Run face detection and identification
-            let faces = faceRecognitionService.detectAndIdentifyFaces(
-                in: pixelBuffer,
-                orientation: .up
-            )
-
-            cachedFaces = faces
-            onFacesDetected?(faces)
+            // Run face detection on a separate thread — never block the display pipeline
+            let recognitionService = faceRecognitionService
+            recognitionQueue.async { [weak self] in
+                let faces = recognitionService.detectAndIdentifyFaces(
+                    in: pixelBuffer,
+                    orientation: .up
+                )
+                self?.cachedFaces = faces
+                self?.isRecognitionBusy = false
+                self?.onFacesDetected?(faces)
+            }
         }
 
-        // Apply blur using cached face data
+        // Apply blur using cached face data (never waits for recognition)
         let faces = cachedFaces
         let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
 
