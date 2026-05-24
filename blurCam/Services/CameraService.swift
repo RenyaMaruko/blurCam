@@ -61,16 +61,27 @@ final class CameraService: NSObject, CameraServiceProtocol {
         captureSession.beginConfiguration()
         defer { captureSession.commitConfiguration() }
 
-        // Use .high preset for balanced quality between photo and video processing.
-        // .photo preset produces very high resolution frames that are expensive to process.
-        captureSession.sessionPreset = .high
+        // Use .inputPriority to let the device format control zoom range (enables ultra-wide)
+        captureSession.sessionPreset = .inputPriority
 
-        // Add video input (back camera)
-        guard let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+        // Use DiscoverySession to find the best multi-lens camera (enables ultra-wide 0.5x)
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [
+                .builtInTripleCamera,
+                .builtInDualWideCamera,
+                .builtInWideAngleCamera
+            ],
+            mediaType: .video,
+            position: .back
+        )
+
+        guard let camera = discovery.devices.first else {
             throw CameraServiceError.cameraUnavailable
         }
 
-        let videoInput = try AVCaptureDeviceInput(device: backCamera)
+        // Debug log removed
+
+        let videoInput = try AVCaptureDeviceInput(device: camera)
         guard captureSession.canAddInput(videoInput) else {
             throw CameraServiceError.cannotAddInput
         }
@@ -156,11 +167,19 @@ final class CameraService: NSObject, CameraServiceProtocol {
         let newPosition = currentPosition.toggled
 
         // Find the camera for the new position
-        guard let newCamera = AVCaptureDevice.default(
-            .builtInWideAngleCamera,
-            for: .video,
-            position: newPosition.avPosition
-        ) else {
+        let newCamera: AVCaptureDevice?
+        if newPosition == .back {
+            let discovery = AVCaptureDevice.DiscoverySession(
+                deviceTypes: [.builtInTripleCamera, .builtInDualWideCamera, .builtInWideAngleCamera],
+                mediaType: .video,
+                position: .back
+            )
+            newCamera = discovery.devices.first
+        } else {
+            newCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+        }
+
+        guard let newCamera else {
             throw CameraServiceError.switchFailed("対象のカメラが見つかりません")
         }
 
@@ -222,6 +241,32 @@ final class CameraService: NSObject, CameraServiceProtocol {
             device.unlockForConfiguration()
         } catch {
             // Silently fail - torch control is non-critical
+        }
+    }
+
+    // MARK: - Zoom
+
+    var zoomFactor: CGFloat {
+        CGFloat(currentDeviceInput?.device.videoZoomFactor ?? 1.0)
+    }
+
+    var maxZoomFactor: CGFloat {
+        min(CGFloat(currentDeviceInput?.device.activeFormat.videoMaxZoomFactor ?? 5.0), 10.0)
+    }
+
+    var minZoomFactor: CGFloat {
+        CGFloat(currentDeviceInput?.device.minAvailableVideoZoomFactor ?? 1.0)
+    }
+
+    func setZoomFactor(_ factor: CGFloat) {
+        guard let device = currentDeviceInput?.device else { return }
+        let clamped = min(max(factor, minZoomFactor), maxZoomFactor)
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = clamped
+            device.unlockForConfiguration()
+        } catch {
+            // Silently fail
         }
     }
 }

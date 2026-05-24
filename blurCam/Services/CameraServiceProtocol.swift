@@ -46,4 +46,14 @@ protocol CameraServiceProtocol: AnyObject {
 
     /// Disables the torch.
     func disableTorch()
+
+    /// Sets the camera zoom factor.
+    /// - Parameter factor: Zoom factor (1.0 = no zoom)
+    func setZoomFactor(_ factor: CGFloat)
+
+    /// The current zoom factor
+    var zoomFactor: CGFloat { get }
+
+    /// The maximum zoom factor for the current device
+    var maxZoomFactor: CGFloat { get }
 }

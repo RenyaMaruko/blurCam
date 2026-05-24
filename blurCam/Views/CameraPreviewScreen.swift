@@ -19,6 +19,8 @@ struct CameraPreviewScreen: View {
     /// Rotation angle for the camera flip animation
     @State private var flipRotation: Double = 0
 
+    @State private var lastZoomFactor: CGFloat = 0
+
     var body: some View {
         ZStack {
             // Full-screen processed camera preview (with blur applied)
@@ -27,6 +29,19 @@ struct CameraPreviewScreen: View {
                 detectedFaces: cameraViewModel.detectedFaces
             )
             .ignoresSafeArea()
+            .gesture(
+                MagnifyGesture()
+                    .onChanged { value in
+                        if lastZoomFactor == 0 {
+                            lastZoomFactor = cameraViewModel.zoomFactor
+                        }
+                        let newFactor = lastZoomFactor * value.magnification
+                        cameraViewModel.setZoomFactor(newFactor)
+                    }
+                    .onEnded { value in
+                        lastZoomFactor = cameraViewModel.zoomFactor
+                    }
+            )
             .rotation3DEffect(
                 .degrees(flipRotation),
                 axis: (x: 0, y: 1, z: 0),
@@ -73,6 +88,7 @@ struct CameraPreviewScreen: View {
             setupSettingsCallbacks()
             if !cameraViewModel.isCameraConfigured {
                 cameraViewModel.setupCamera()
+                lastZoomFactor = cameraViewModel.zoomFactor
             } else {
                 cameraViewModel.startCamera()
             }
@@ -239,6 +255,19 @@ struct CameraPreviewScreen: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                     .accessibilityIdentifier("errorMessage")
             }
+
+            // Zoom indicator
+            Text(cameraViewModel.zoomDisplayText)
+                    .font(.system(size: DesignTokens.Typography.sm, weight: DesignTokens.Typography.Weight.semibold))
+                    .foregroundStyle(DesignTokens.Colors.warning)
+                    .padding(.horizontal, DesignTokens.Spacing.space3)
+                    .padding(.vertical, DesignTokens.Spacing.space1)
+                    .background(
+                        Capsule()
+                            .fill(DesignTokens.Colors.primary.opacity(0.5))
+                    )
+                    .padding(.bottom, DesignTokens.Spacing.space2)
+                    .animation(.easeInOut(duration: DesignTokens.Motion.fast), value: cameraViewModel.zoomDisplayText)
 
             // Bottom dark area mimicking iOS Camera
             VStack(spacing: DesignTokens.Spacing.space4) {

@@ -82,4 +82,11 @@ final class MockCameraService: CameraServiceProtocol {
         disableTorchCallCount += 1
         isTorchActive = false
     }
+
+    var zoomFactor: CGFloat = 1.0
+    var maxZoomFactor: CGFloat = 10.0
+
+    func setZoomFactor(_ factor: CGFloat) {
+        zoomFactor = min(max(factor, 1.0), maxZoomFactor)
+    }
 }

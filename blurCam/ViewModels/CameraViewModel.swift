@@ -44,6 +44,9 @@ final class CameraViewModel: ObservableObject {
     /// Whether to show the media preview screen
     @Published var showMediaPreview: Bool = false
 
+    /// Current zoom display text (e.g. "0.5x", "1x", "2.3x")
+    @Published private(set) var zoomDisplayText: String = "1x"
+
     // MARK: - Dependencies
 
     private let cameraService: CameraServiceProtocol
@@ -120,6 +123,11 @@ final class CameraViewModel: ObservableObject {
 
             cameraService.start()
             errorMessage = nil
+
+            // Start at 1x (standard) by setting zoom to switch-over point
+            let initialZoom = switchOverFactor
+            cameraService.setZoomFactor(initialZoom)
+            updateZoomDisplayText()
 
             // Load the latest media thumbnail
             loadLatestMedia()
@@ -372,6 +380,45 @@ final class CameraViewModel: ObservableObject {
         let newMode = flashMode.next
         flashMode = newMode
         cameraService.flashMode = newMode
+    }
+
+    // MARK: - Zoom
+
+    var zoomFactor: CGFloat {
+        cameraService.zoomFactor
+    }
+
+    func setZoomFactor(_ factor: CGFloat) {
+        cameraService.setZoomFactor(factor)
+        updateZoomDisplayText()
+    }
+
+    /// The switch-over zoom factor where the camera switches from ultra-wide to wide lens.
+    /// On DualWide/Triple cameras this is typically 2.0, meaning zoom 1.0 = ultra-wide (0.5x display).
+    private var switchOverFactor: CGFloat {
+        // Read from the device's virtualDeviceSwitchOverVideoZoomFactors
+        if let first = cameraService.captureSession.inputs
+            .compactMap({ ($0 as? AVCaptureDeviceInput)?.device })
+            .first?.virtualDeviceSwitchOverVideoZoomFactors.first {
+            return CGFloat(first.doubleValue)
+        }
+        return 1.0 // Single lens: no conversion needed
+    }
+
+    private func updateZoomDisplayText() {
+        let factor = cameraService.zoomFactor
+        // Convert device zoom to display zoom (e.g. device 1.0 = display 0.5x when switchOver=2)
+        let displayFactor = factor / switchOverFactor
+
+        if abs(displayFactor - 1.0) < 0.05 {
+            zoomDisplayText = "1x"
+        } else if abs(displayFactor - 0.5) < 0.03 {
+            zoomDisplayText = "0.5x"
+        } else if displayFactor == floor(displayFactor) {
+            zoomDisplayText = "\(Int(displayFactor))x"
+        } else {
+            zoomDisplayText = String(format: "%.1fx", displayFactor)
+        }
     }
 
     // MARK: - Media Preview
