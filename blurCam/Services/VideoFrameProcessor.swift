@@ -60,7 +60,12 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
         label: "com.blurCam.faceRecognitionQueue",
         qos: .userInitiated
     )
-    private var isRecognitionBusy = false
+    private let recognitionLock = NSLock()
+    private var _isRecognitionBusy = false
+    private var isRecognitionBusy: Bool {
+        get { recognitionLock.withLock { _isRecognitionBusy } }
+        set { recognitionLock.withLock { _isRecognitionBusy = newValue } }
+    }
     private var isProcessingActive = false
     private weak var captureSession: AVCaptureSession?
 
@@ -68,6 +73,12 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
     /// Detection runs at a lower frequency than frame rendering.
     private var lastDetectionTime: CFTimeInterval = 0
     private let detectionInterval: CFTimeInterval = 0.1 // ~10 detections per second
+
+    /// Per-face smoothed bounding boxes keyed by stable track ID
+    private var smoothedBoxes: [Int: CGRect] = [:]
+    private let smoothingFactor: CGFloat = 0.3
+    /// Lightweight tracker for per-frame Vision detection (separate from FaceNet's tracker)
+    private let displayTracker = FaceTracker()
 
     /// Cache the last detection results for frames between detections
     private var cachedFaces: [DetectedFace] = []
@@ -354,6 +365,42 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
         ciContext.render(ciImage, to: buffer)
         return buffer
     }
+
+    private static func computeIoU(_ a: CGRect, _ b: CGRect) -> CGFloat {
+        let inter = a.intersection(b)
+        if inter.isNull { return 0 }
+        let interArea = inter.width * inter.height
+        let unionArea = a.width * a.height + b.width * b.height - interArea
+        return unionArea > 0 ? interArea / unionArea : 0
+    }
+
+    /// Smooth a bounding box towards a target using lerp, then quantize to reduce jitter
+    private func smoothBox(trackIndex: Int, target: CGRect) -> CGRect {
+        let smoothed: CGRect
+        if let previous = smoothedBoxes[trackIndex] {
+            // Lerp: move previous towards target
+            smoothed = CGRect(
+                x: previous.minX + (target.minX - previous.minX) * smoothingFactor,
+                y: previous.minY + (target.minY - previous.minY) * smoothingFactor,
+                width: previous.width + (target.width - previous.width) * smoothingFactor,
+                height: previous.height + (target.height - previous.height) * smoothingFactor
+            )
+        } else {
+            smoothed = target
+        }
+
+        // Quantize to reduce sub-pixel jitter (snap to 0.005 in normalized coords ≈ 4px at 1080p)
+        let step: CGFloat = 0.005
+        let quantized = CGRect(
+            x: (smoothed.minX / step).rounded() * step,
+            y: (smoothed.minY / step).rounded() * step,
+            width: (smoothed.width / step).rounded() * step,
+            height: (smoothed.height / step).rounded() * step
+        )
+
+        smoothedBoxes[trackIndex] = quantized
+        return quantized
+    }
 }
 
 // MARK: - AVCaptureVideoDataOutputSampleBufferDelegate & AVCaptureAudioDataOutputSampleBufferDelegate
@@ -386,17 +433,72 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
         videoWidth = imageWidth
         videoHeight = imageHeight
 
+        // --- Lightweight face detection every frame (Vision only, fast) ---
+        // Updates face POSITIONS every frame so blur tracks movement in real-time
+        let faceRequest = VNDetectFaceRectanglesRequest()
+        faceRequest.revision = VNDetectFaceRectanglesRequestRevision3
+        let visionHandler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        var currentBoxes: [CGRect] = []
+        if let _ = try? visionHandler.perform([faceRequest]),
+           let results = faceRequest.results, !results.isEmpty {
+            currentBoxes = results.map { $0.boundingBox }
+
+            // Assign stable track IDs using IoU tracker
+            let assignments = displayTracker.assign(boxes: currentBoxes)
+
+            // Build updated faces with smoothed positions and tracked identity
+            var updatedFaces: [DetectedFace] = []
+            var activeTrackIDs = Set<Int>()
+
+            for (box, trackedFace) in assignments {
+                let trackID = trackedFace.trackID
+                activeTrackIDs.insert(trackID)
+
+                // Smooth the bounding box per-track to prevent jitter
+                let stableBox = smoothBox(trackIndex: trackID, target: box)
+
+                // Use TrackedFace's own isRegistered state (persists across frames via trackID)
+                // This is updated when heavy recognition results come in (see below)
+                updatedFaces.append(DetectedFace(
+                    boundingBox: stableBox,
+                    isRegistered: trackedFace.isRegistered,
+                    confidence: Float(trackedFace.isRegistered ? 0.9 : 0.5)
+                ))
+            }
+
+            cachedFaces = updatedFaces
+
+            // Clean up smoothed boxes for disappeared faces
+            for key in smoothedBoxes.keys where !activeTrackIDs.contains(key) {
+                smoothedBoxes.removeValue(forKey: key)
+            }
+
+            onFacesDetected?(cachedFaces)
+        }
+
+        // --- Heavy FaceNet recognition on separate thread (throttled) ---
         if shouldDetect && !isRecognitionBusy {
             lastDetectionTime = currentTime
             isRecognitionBusy = true
 
-            // Run face detection on a separate thread — never block the display pipeline
             let recognitionService = faceRecognitionService
+            let tracker = displayTracker
             recognitionQueue.async { [weak self] in
                 let faces = recognitionService.detectAndIdentifyFaces(
                     in: pixelBuffer,
                     orientation: .up
                 )
+
+                // Propagate identity results to displayTracker's TrackedFaces
+                // Match recognition results to display tracks by IoU
+                let displayAssignments = tracker.assign(boxes: faces.map { $0.boundingBox })
+                for (i, (_, displayFace)) in displayAssignments.enumerated() {
+                    if i < faces.count {
+                        // Feed similarity=1.0 for registered, 0.0 for unregistered
+                        _ = displayFace.update(similarity: faces[i].isRegistered ? 1.0 : 0.0)
+                    }
+                }
+
                 self?.cachedFaces = faces
                 self?.isRecognitionBusy = false
                 self?.onFacesDetected?(faces)
