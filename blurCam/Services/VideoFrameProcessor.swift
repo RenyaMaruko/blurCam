@@ -74,10 +74,8 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
     private var lastDetectionTime: CFTimeInterval = 0
     private let detectionInterval: CFTimeInterval = 0.1 // ~10 detections per second
 
-    /// Per-face smoothed bounding boxes keyed by stable track ID
-    private var smoothedBoxes: [Int: CGRect] = [:]
-    /// Previous frame's raw detection boxes for velocity prediction
-    private var prevRawBoxes: [Int: CGRect] = [:]
+    /// Per-face 1-Euro filters keyed by stable track ID
+    private var rectFilters: [Int: RectOneEuroFilter] = [:]
     /// Lightweight tracker for per-frame Vision detection (separate from FaceNet's tracker)
     private let displayTracker = FaceTracker()
 
@@ -375,52 +373,14 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
         return unionArea > 0 ? interArea / unionArea : 0
     }
 
-    /// Smooth a bounding box with velocity-adaptive lerp, prediction, and quantization.
+    /// Smooth a bounding box using 1-Euro filter (per track).
     private func smoothBox(trackIndex: Int, target: CGRect) -> CGRect {
-        // Predict next position using velocity from previous frames
-        let predicted: CGRect
-        if let prevRaw = prevRawBoxes[trackIndex] {
-            let vx = target.midX - prevRaw.midX
-            let vy = target.midY - prevRaw.midY
-            // Extrapolate 1 frame ahead to compensate for detection latency
-            predicted = CGRect(
-                x: target.origin.x + vx,
-                y: target.origin.y + vy,
-                width: target.width,
-                height: target.height
-            )
-        } else {
-            predicted = target
-        }
-        prevRawBoxes[trackIndex] = target
-
-        let smoothed: CGRect
-        if let previous = smoothedBoxes[trackIndex] {
-            let movement = hypot(predicted.midX - previous.midX, predicted.midY - previous.midY)
-            // Adaptive: still → t=0.25 (stable), moving → t=0.85 (responsive)
-            let t = min(max(0.25 + movement * 12, 0.25), 0.85)
-
-            smoothed = CGRect(
-                x: previous.minX + (predicted.minX - previous.minX) * t,
-                y: previous.minY + (predicted.minY - previous.minY) * t,
-                width: previous.width + (predicted.width - previous.width) * t,
-                height: previous.height + (predicted.height - previous.height) * t
-            )
-        } else {
-            smoothed = predicted
-        }
-
-        // Quantize to reduce sub-pixel jitter
-        let step: CGFloat = 0.003
-        let quantized = CGRect(
-            x: (smoothed.minX / step).rounded() * step,
-            y: (smoothed.minY / step).rounded() * step,
-            width: (smoothed.width / step).rounded() * step,
-            height: (smoothed.height / step).rounded() * step
-        )
-
-        smoothedBoxes[trackIndex] = quantized
-        return quantized
+        let filter = rectFilters[trackIndex] ?? {
+            let f = RectOneEuroFilter(freq: 30.0, mincutoff: 0.05, beta: 10.0, dcutoff: 1.0)
+            rectFilters[trackIndex] = f
+            return f
+        }()
+        return filter.filter(target)
     }
 }
 
@@ -489,10 +449,9 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
 
             cachedFaces = updatedFaces
 
-            // Clean up state for disappeared faces
-            for key in smoothedBoxes.keys where !activeTrackIDs.contains(key) {
-                smoothedBoxes.removeValue(forKey: key)
-                prevRawBoxes.removeValue(forKey: key)
+            // Clean up filters for disappeared faces
+            for key in rectFilters.keys where !activeTrackIDs.contains(key) {
+                rectFilters.removeValue(forKey: key)
             }
 
             onFacesDetected?(cachedFaces)
