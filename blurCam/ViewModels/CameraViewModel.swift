@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import CoreImage
 import Foundation
@@ -121,6 +122,11 @@ final class CameraViewModel: ObservableObject {
             // Start video frame processing for real-time blur
             try videoFrameProcessor.startProcessing(on: cameraService.captureSession)
 
+            // Pre-configure audio capture so recording start/stop doesn't need session reconfiguration
+            if permissionRepository.microphonePermissionStatus() == .authorized {
+                try? videoFrameProcessor.startAudioCapture(on: cameraService.captureSession)
+            }
+
             cameraService.start()
             errorMessage = nil
 
@@ -223,42 +229,18 @@ final class CameraViewModel: ObservableObject {
     /// Starts video recording
     func startRecording() async {
         guard captureState == .idle else { return }
+
+        // Immediate UI feedback — button changes to square + play sound instantly
+        captureState = .recording
+        recordingDuration = 0
+        recordingStartTime = Date()
+        startRecordingTimer()
+        AudioServicesPlaySystemSound(1117) // iPhone video recording start sound
         errorMessage = nil
 
-        // Check photo library permission first
-        let photoPermission = permissionRepository.photoLibraryPermissionStatus()
-        if photoPermission == .notDetermined {
-            let newStatus = await permissionRepository.requestPhotoLibraryPermission()
-            if newStatus == .denied {
-                errorMessage = "フォトライブラリへのアクセスが拒否されました"
-                return
-            }
-        } else if photoPermission == .denied {
-            errorMessage = "フォトライブラリへのアクセスが拒否されました"
-            return
-        }
+        // Audio is pre-configured at camera setup — just check if it's available
+        let includeAudio = (permissionRepository.microphonePermissionStatus() == .authorized)
 
-        // Check microphone permission - request if not determined
-        let micPermission = permissionRepository.microphonePermissionStatus()
-        var includeAudio = false
-        if micPermission == .notDetermined {
-            let newMicStatus = await permissionRepository.requestMicrophonePermission()
-            includeAudio = (newMicStatus == .authorized)
-        } else {
-            includeAudio = (micPermission == .authorized)
-        }
-
-        // Set up audio capture if we have permission
-        if includeAudio {
-            do {
-                try videoFrameProcessor.startAudioCapture(on: cameraService.captureSession)
-            } catch {
-                // Continue without audio if setup fails
-                includeAudio = false
-            }
-        }
-
-        // Get current video dimensions
         let width = videoFrameProcessor.videoWidth > 0 ? videoFrameProcessor.videoWidth : 1920
         let height = videoFrameProcessor.videoHeight > 0 ? videoFrameProcessor.videoHeight : 1080
 
@@ -268,60 +250,48 @@ final class CameraViewModel: ObservableObject {
                 height: height,
                 includeAudio: includeAudio
             )
-
-            // Set up callbacks for recording
             setupRecordingCallbacks()
-
-            // Enable torch if flash is on during video recording
             if flashMode == .on {
                 try? cameraService.enableTorch()
             }
-
-            captureState = .recording
-            recordingDuration = 0
-            recordingStartTime = Date()
-            startRecordingTimer()
         } catch {
             errorMessage = error.localizedDescription
-            videoFrameProcessor.stopAudioCapture()
+            captureState = .idle
+            stopRecordingTimer()
         }
     }
 
     /// Stops video recording and saves the video
     func stopRecording() async {
-        guard captureState == .recording else { return }
+        guard captureState == .recording || captureState == .stoppingRecording else { return }
 
-        captureState = .stoppingRecording
+        // Immediate UI feedback — button changes back + sound
+        captureState = .idle
         stopRecordingTimer()
-
-        // Disable torch when stopping recording
+        AudioServicesPlaySystemSound(1118) // iPhone video recording stop sound
         cameraService.disableTorch()
-
-        // Remove recording callbacks
         teardownRecordingCallbacks()
 
-        // Stop audio capture
-        videoFrameProcessor.stopAudioCapture()
+        // Heavy work (audio teardown, finalize video, save) on background
+        let processor = videoFrameProcessor
+        let recorder = videoRecordingService
+        let photoRepo = photoRepository
 
-        do {
-            let videoURL = try await videoRecordingService.stopRecording()
+        Task.detached { [weak self] in
+            // Audio stays configured — no need to tear down between recordings
+            do {
+                let videoURL = try await recorder.stopRecording()
+                try await photoRepo.saveVideo(videoURL)
+                try? FileManager.default.removeItem(at: videoURL)
 
-            // Save video to photo library
-            try await photoRepository.saveVideo(videoURL)
-
-            // Clean up the temporary file
-            try? FileManager.default.removeItem(at: videoURL)
-
-            captureState = .captured
-
-            // Update the latest media thumbnail
-            loadLatestMedia()
-
-            resetCaptureStateAfterDelay()
-        } catch {
-            captureState = .failed(error.localizedDescription)
-            errorMessage = error.localizedDescription
-            resetCaptureStateAfterDelay()
+                await MainActor.run {
+                    self?.loadLatestMedia()
+                }
+            } catch {
+                await MainActor.run {
+                    self?.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 
