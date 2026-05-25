@@ -44,10 +44,15 @@ final class TrackedFace {
         return !isRegistered
     }
 
+    /// Reset miss count when face is detected again
+    func resetMissCount() {
+        missCount = 0
+    }
+
     /// Call when face disappears from frame. Returns true if track should be removed.
     func markMissed() -> Bool {
         missCount += 1
-        return missCount > 10
+        return missCount > 8  // ~0.8s at 10fps — tolerates brief look-away
     }
 }
 
@@ -71,6 +76,7 @@ final class FaceTracker {
             if let id = bestID {
                 matchedIDs.insert(id)
                 tracked[id]?.lastBox = box
+                tracked[id]?.face.resetMissCount()
                 result.append((box, tracked[id]!.face))
             } else {
                 let face = TrackedFace(trackID: nextID)
@@ -81,9 +87,14 @@ final class FaceTracker {
             }
         }
 
-        // Remove tracks that have been missing too long
+        // Unmatched tracks: keep their last box for a few frames (lost tolerance)
         for (id, entry) in tracked where !matchedIDs.contains(id) {
-            if entry.face.markMissed() { tracked.removeValue(forKey: id) }
+            if entry.face.markMissed() {
+                tracked.removeValue(forKey: id)
+            } else {
+                // Still within tolerance — include with last known position
+                result.append((entry.lastBox, entry.face))
+            }
         }
         return result
     }
