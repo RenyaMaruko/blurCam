@@ -2,49 +2,56 @@ import SwiftUI
 
 /// Displays recording status with a red blinking dot and elapsed time.
 /// Shown at the top of the camera screen during video recording.
+/// Shares the same capsule-in-capsule layout as the LIVE streaming indicator.
 struct RecordingIndicatorView: View {
     let duration: String
 
-    /// Blinking animation state
-    @State private var isBlinking: Bool = true
-
     var body: some View {
-        HStack(spacing: 6) {
-            // Red recording dot
-            Circle()
-                .fill(DesignTokens.Colors.error)
-                .frame(width: 8, height: 8)
-                .opacity(isBlinking ? 1.0 : 0.15)
-                .animation(
-                    .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
-                    value: isBlinking
-                )
-                .onAppear {
-                    isBlinking = false
-                }
-                .accessibilityIdentifier("recordingDot")
+        HStack(spacing: 0) {
+            // REC label group (dot + text) with tinted background
+            HStack(spacing: DesignTokens.Spacing.space1) {
+                Circle()
+                    .fill(DesignTokens.Colors.textPrimary)
+                    .frame(width: 6, height: 6)
+                    .modifier(BlinkingModifier())
+                    .accessibilityIdentifier("recordingDot")
 
-            // Elapsed time
+                Text("REC")
+                    .font(.system(
+                        size: DesignTokens.Typography.xs,
+                        weight: DesignTokens.Typography.Weight.bold
+                    ))
+                    .kerning(1.0)
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.space2)
+            .padding(.vertical, DesignTokens.Spacing.space1)
+            .background(
+                Capsule()
+                    .fill(DesignTokens.Colors.error.opacity(0.85))
+            )
+
+            // Elapsed time — sits adjacent
             Text(duration)
                 .font(.system(
-                    size: DesignTokens.Typography.sm,
+                    size: DesignTokens.Typography.xs,
                     weight: DesignTokens.Typography.Weight.medium
                 ))
-                .foregroundStyle(DesignTokens.Colors.textPrimary)
                 .monospacedDigit()
+                .foregroundStyle(DesignTokens.Colors.textSecondary)
+                .padding(.leading, DesignTokens.Spacing.space2)
+                .padding(.trailing, DesignTokens.Spacing.space3)
                 .accessibilityIdentifier("recordingTimer")
         }
-        .padding(.horizontal, DesignTokens.Spacing.space3)
-        .padding(.vertical, DesignTokens.Spacing.space1 + 2)
+        .padding(.vertical, DesignTokens.Spacing.space1)
         .background(
             Capsule()
-                .fill(DesignTokens.Colors.error.opacity(0.4))
+                .fill(DesignTokens.Colors.primary.opacity(0.5))
                 .overlay(
                     Capsule()
-                        .stroke(DesignTokens.Colors.error.opacity(0.2), lineWidth: 0.5)
+                        .stroke(DesignTokens.Colors.border, lineWidth: 0.5)
                 )
         )
-        .shadow(color: DesignTokens.Colors.primary.opacity(0.3), radius: DesignTokens.Spacing.space2, x: 0, y: 2)
         .accessibilityIdentifier("recordingIndicator")
         .accessibilityLabel("録画中 \(duration)")
     }

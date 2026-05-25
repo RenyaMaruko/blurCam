@@ -100,7 +100,7 @@ final class FaceCaptureViewModelTests: XCTestCase {
     func testInitial_GuidanceText() {
         let viewModel = makeViewModel()
 
-        XCTAssertEqual(viewModel.guidanceText, "顔をフレーム内に合わせてください")
+        XCTAssertEqual(viewModel.guidanceText, "正面を向いてください")
     }
 
     // MARK: - Capture and Save Face Tests
@@ -112,26 +112,36 @@ final class FaceCaptureViewModelTests: XCTestCase {
         let viewModel = makeViewModel()
         viewModel.setupCamera()
 
-        // Simulate face being detected
-        // We need to manually set the isFaceDetected since mock callback is async
-        mockDetectionService.isFaceDetected = true
-        // Manually trigger the callback effect
-        viewModel.setupCamera() // Already configured, won't re-setup
-        // Directly test: we need to wait for the callback - let's set it up properly
-
-        // The test challenge: isFaceDetected is set via callback.
-        // For testing, we can verify the flow when face IS detected by invoking callback directly
+        // Simulate face detected via callback
         mockDetectionService.onFaceDetectionChanged?(true)
-
-        // Wait a tiny bit for MainActor dispatch
         try? await Task.sleep(nanoseconds: 100_000_000)
 
+        // 3-step capture: front, left, right
+        // Step 1
+        await viewModel.captureAndSaveFace()
+        XCTAssertFalse(viewModel.isFaceSaved)
+        XCTAssertEqual(viewModel.currentStep, 2)
+
+        // Re-detect face for next step
+        mockDetectionService.onFaceDetectionChanged?(true)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Step 2
+        await viewModel.captureAndSaveFace()
+        XCTAssertFalse(viewModel.isFaceSaved)
+        XCTAssertEqual(viewModel.currentStep, 3)
+
+        // Re-detect face for final step
+        mockDetectionService.onFaceDetectionChanged?(true)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Step 3 - final capture, should save all
         await viewModel.captureAndSaveFace()
 
         XCTAssertTrue(viewModel.isFaceSaved)
-        XCTAssertEqual(mockCaptureService.capturePhotoCallCount, 1)
-        XCTAssertEqual(mockDetectionService.detectFaceCallCount, 1)
-        XCTAssertEqual(mockFaceRepo.saveFaceCallCount, 1)
+        XCTAssertEqual(mockCaptureService.capturePhotoCallCount, 3)
+        XCTAssertEqual(mockDetectionService.detectFaceCallCount, 3)
+        XCTAssertEqual(mockFaceRepo.saveFaceCallCount, 3)
         XCTAssertNil(viewModel.errorMessage)
     }
 
@@ -190,6 +200,20 @@ final class FaceCaptureViewModelTests: XCTestCase {
         mockDetectionService.onFaceDetectionChanged?(true)
         try? await Task.sleep(nanoseconds: 100_000_000)
 
+        // 3-step capture: complete all steps then save fails on final step
+        // Step 1
+        await viewModel.captureAndSaveFace()
+        // Re-detect face
+        mockDetectionService.onFaceDetectionChanged?(true)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Step 2
+        await viewModel.captureAndSaveFace()
+        // Re-detect face
+        mockDetectionService.onFaceDetectionChanged?(true)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Step 3 - save will fail here
         await viewModel.captureAndSaveFace()
 
         XCTAssertFalse(viewModel.isFaceSaved)

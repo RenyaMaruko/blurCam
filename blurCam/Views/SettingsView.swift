@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// Settings screen for managing registered faces and blur intensity.
+/// Settings screen for managing registered faces, blur intensity, and streaming configuration.
 /// Presented as a sheet from the camera preview screen.
 /// Styled to match iOS Settings dark appearance with design tokens.
 struct SettingsView: View {
 
     @ObservedObject var viewModel: SettingsViewModel
+    @ObservedObject var streamingSettingsViewModel: StreamingSettingsViewModel
     let onDismiss: () -> Void
 
     var body: some View {
@@ -111,6 +112,62 @@ struct SettingsView: View {
                     }
                     .background(DesignTokens.Colors.backgroundSecondary)
                     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.small))
+
+                    // MARK: - Streaming Settings Section
+                    settingsSectionHeader(title: "配信設定", identifier: "streamingSettingsHeader")
+
+                    NavigationLink {
+                        StreamingSettingsView(viewModel: streamingSettingsViewModel)
+                    } label: {
+                        HStack(spacing: DesignTokens.Spacing.space3) {
+                            ZStack {
+                                Circle()
+                                    .fill(DesignTokens.Colors.surface)
+                                    .frame(width: 44, height: 44)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(DesignTokens.Colors.border, lineWidth: 1)
+                                    )
+
+                                Image(systemName: "dot.radiowaves.left.and.right")
+                                    .font(.system(size: DesignTokens.Typography.lg, weight: DesignTokens.Typography.Weight.medium))
+                                    .foregroundStyle(DesignTokens.Colors.textSecondary)
+                            }
+
+                            VStack(alignment: .leading, spacing: DesignTokens.Spacing.space1) {
+                                Text("配信設定")
+                                    .font(.system(size: DesignTokens.Typography.base, weight: DesignTokens.Typography.Weight.medium))
+                                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+
+                                if let selected = streamingSettingsViewModel.getSelectedDestination() {
+                                    HStack(spacing: DesignTokens.Spacing.space1) {
+                                        Circle()
+                                            .fill(DesignTokens.Colors.success)
+                                            .frame(width: 5, height: 5)
+                                        Text(selected.name)
+                                            .font(.system(size: DesignTokens.Typography.sm))
+                                            .foregroundStyle(DesignTokens.Colors.textTertiary)
+                                            .lineLimit(1)
+                                    }
+                                } else {
+                                    Text("配信先を設定してください")
+                                        .font(.system(size: DesignTokens.Typography.sm))
+                                        .foregroundStyle(DesignTokens.Colors.textTertiary)
+                                }
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: DesignTokens.Typography.sm, weight: DesignTokens.Typography.Weight.medium))
+                                .foregroundStyle(DesignTokens.Colors.textTertiary)
+                        }
+                        .padding(.horizontal, DesignTokens.Spacing.space4)
+                        .padding(.vertical, DesignTokens.Spacing.space3)
+                    }
+                    .background(DesignTokens.Colors.backgroundSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.small))
+                    .accessibilityIdentifier("streamingSettingsNavigationLink")
 
                     // MARK: - Privacy Footer
                     HStack(spacing: DesignTokens.Spacing.space2) {

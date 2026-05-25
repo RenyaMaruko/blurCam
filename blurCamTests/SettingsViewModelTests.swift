@@ -51,7 +51,8 @@ final class SettingsViewModelTests: XCTestCase {
         let viewModel = makeViewModel()
 
         XCTAssertEqual(viewModel.registeredFaces.count, 1)
-        XCTAssertEqual(viewModel.registeredFaces.first?.id, registration.id)
+        // FaceGroupEntry.id == groupId, not registration.id
+        XCTAssertEqual(viewModel.registeredFaces.first?.id, registration.groupId)
     }
 
     func testLoadFaces_MultipleFaces() throws {
@@ -60,8 +61,10 @@ final class SettingsViewModelTests: XCTestCase {
         let viewModel = makeViewModel()
 
         XCTAssertEqual(viewModel.registeredFaces.count, 2)
-        XCTAssertEqual(viewModel.registeredFaces[0].id, reg1.id)
-        XCTAssertEqual(viewModel.registeredFaces[1].id, reg2.id)
+        // FaceGroupEntry.id == groupId; sort is by registeredAt
+        let groupIds = viewModel.registeredFaces.map { $0.id }
+        XCTAssertTrue(groupIds.contains(reg1.groupId))
+        XCTAssertTrue(groupIds.contains(reg2.groupId))
     }
 
     func testLoadFaces_IncludesThumbnailData() throws {

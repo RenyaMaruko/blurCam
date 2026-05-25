@@ -2,13 +2,14 @@ import AudioToolbox
 import AVFoundation
 import CoreImage
 import Foundation
+import Network
 import SwiftUI
 
 /// ViewModel responsible for managing camera operations including
 /// session management, real-time face detection/blur processing,
 /// photo capture, video recording with mode switching,
 /// camera switching, flash control, media preview,
-/// and blur intensity configuration.
+/// blur intensity configuration, and RTMP live streaming.
 @MainActor
 final class CameraViewModel: ObservableObject {
 
@@ -48,6 +49,18 @@ final class CameraViewModel: ObservableObject {
     /// Current zoom display text (e.g. "0.5x", "1x", "2.3x")
     @Published private(set) var zoomDisplayText: String = "1x"
 
+    /// Current streaming state
+    @Published private(set) var streamingState: StreamingState = .idle
+
+    /// Streaming elapsed time in seconds
+    @Published private(set) var streamingDuration: TimeInterval = 0
+
+    /// Whether the network connection is currently unsatisfied (no connectivity)
+    @Published private(set) var isNetworkUnsatisfied: Bool = false
+
+    /// Whether the user has requested to stop streaming (triggers confirmation dialog)
+    @Published var showStopStreamingConfirmation: Bool = false
+
     // MARK: - Dependencies
 
     private let cameraService: CameraServiceProtocol
@@ -56,6 +69,8 @@ final class CameraViewModel: ObservableObject {
     private let faceRepository: FaceRepositoryProtocol
     private let videoFrameProcessor: VideoFrameProcessorProtocol
     private let videoRecordingService: VideoRecordingServiceProtocol
+    private let streamingService: StreamingServiceProtocol
+    private let streamingSettingsRepository: StreamingSettingsRepositoryProtocol
 
     // MARK: - Public Properties
 
@@ -72,6 +87,11 @@ final class CameraViewModel: ObservableObject {
         captureState == .recording
     }
 
+    /// Whether live streaming is currently active
+    var isStreaming: Bool {
+        streamingState == .streaming
+    }
+
     /// Formatted recording duration string (MM:SS)
     var formattedRecordingDuration: String {
         let minutes = Int(recordingDuration) / 60
@@ -79,10 +99,28 @@ final class CameraViewModel: ObservableObject {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    /// Formatted streaming duration string (HH:MM:SS)
+    var formattedStreamingDuration: String {
+        let totalSeconds = Int(streamingDuration)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
     // MARK: - Private Properties
 
     private var recordingTimer: Timer?
     private var recordingStartTime: Date?
+
+    private var streamingTimer: Timer?
+    private var streamingStartTime: Date?
+
+    private var networkMonitor: NWPathMonitor?
+    private let networkMonitorQueue = DispatchQueue(label: "com.blurCam.networkMonitor")
+
+    private var backgroundObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
 
     // MARK: - Initialization
 
@@ -92,7 +130,9 @@ final class CameraViewModel: ObservableObject {
         permissionRepository: PermissionRepositoryProtocol = PermissionRepository(),
         faceRepository: FaceRepositoryProtocol = FaceRepository(),
         videoFrameProcessor: VideoFrameProcessorProtocol? = nil,
-        videoRecordingService: VideoRecordingServiceProtocol? = nil
+        videoRecordingService: VideoRecordingServiceProtocol? = nil,
+        streamingService: StreamingServiceProtocol? = nil,
+        streamingSettingsRepository: StreamingSettingsRepositoryProtocol? = nil
     ) {
         self.cameraService = cameraService
         self.photoRepository = photoRepository
@@ -100,8 +140,27 @@ final class CameraViewModel: ObservableObject {
         self.faceRepository = faceRepository
         self.videoFrameProcessor = videoFrameProcessor ?? VideoFrameProcessor()
         self.videoRecordingService = videoRecordingService ?? VideoRecordingService()
+        self.streamingService = streamingService ?? StreamingService()
+        self.streamingSettingsRepository = streamingSettingsRepository ?? StreamingSettingsRepository()
 
         setupFrameProcessorCallbacks()
+        setupStreamingStateCallback()
+        setupBackgroundObservers()
+        setupNetworkMonitor()
+    }
+
+    deinit {
+        // Clean up observers and timers to prevent leaks
+        if let bgObs = backgroundObserver {
+            NotificationCenter.default.removeObserver(bgObs)
+        }
+        if let fgObs = foregroundObserver {
+            NotificationCenter.default.removeObserver(fgObs)
+        }
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        recordingTimer?.invalidate()
+        streamingTimer?.invalidate()
     }
 
     // MARK: - Public Methods
@@ -149,12 +208,15 @@ final class CameraViewModel: ObservableObject {
         cameraService.start()
     }
 
-    /// Stops the camera session
+    /// Stops the camera session and any active streaming/recording
     func stopCamera() {
         if isRecording {
             Task {
                 await stopRecording()
             }
+        }
+        if streamingState.isActive {
+            stopStreaming()
         }
         videoFrameProcessor.stopProcessing()
         cameraService.stop()
@@ -228,7 +290,7 @@ final class CameraViewModel: ObservableObject {
 
     /// Starts video recording
     func startRecording() async {
-        guard captureState == .idle else { return }
+        guard captureState == .idle, !streamingState.isActive else { return }
 
         // Immediate UI feedback — button changes to square instantly
         captureState = .recording
@@ -303,12 +365,22 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - Camera Switch
 
-    /// Switches between front and back camera with animation
+    /// Switches between front and back camera with animation.
+    /// During streaming, the RTMP connection is maintained while the camera input is swapped.
+    /// The streaming callbacks are temporarily removed and re-established after the switch.
     func switchCamera() {
         guard isCameraConfigured, !isSwitchingCamera, !isRecording else { return }
 
         // Start animation immediately on main thread
         isSwitchingCamera = true
+
+        // Track whether we're switching during an active stream
+        let wasStreaming = streamingState.isActive
+
+        // If streaming, temporarily remove frame callbacks (keep RTMP connection alive)
+        if wasStreaming {
+            teardownStreamingCallbacks()
+        }
 
         // Do camera switch on background thread to not block the animation
         let session = cameraService.captureSession
@@ -333,11 +405,20 @@ final class CameraViewModel: ObservableObject {
                         service.flashMode = .off
                     }
                     self.loadRegisteredFaceData()
+
+                    // Re-establish streaming callbacks so new camera frames go to RTMP
+                    if wasStreaming {
+                        self.setupStreamingCallbacks()
+                    }
                 }
             } catch {
                 session.startRunning()
                 Task { @MainActor [weak self] in
                     self?.errorMessage = error.localizedDescription
+                    // Re-establish streaming callbacks even on error
+                    if wasStreaming {
+                        self?.setupStreamingCallbacks()
+                    }
                 }
             }
 
@@ -424,6 +505,93 @@ final class CameraViewModel: ObservableObject {
         loadRegisteredFaceData()
     }
 
+    // MARK: - Streaming
+
+    /// Starts RTMP live streaming using the currently selected destination or legacy settings
+    func startStreaming() {
+        // Block if recording is in progress (mutual exclusion)
+        guard !isRecording else {
+            errorMessage = "録画中は配信を開始できません"
+            return
+        }
+
+        // Try to load selected destination first
+        let rtmpURL: String
+        let streamKey: String
+
+        if let destination = streamingSettingsRepository.loadSelectedDestination() {
+            rtmpURL = destination.rtmpURL
+            streamKey = destination.streamKey
+        } else if let legacyURL = streamingSettingsRepository.loadRTMPURL(),
+                  !legacyURL.isEmpty {
+            // Fall back to legacy settings
+            rtmpURL = legacyURL
+            streamKey = streamingSettingsRepository.loadStreamKey() ?? ""
+        } else {
+            errorMessage = StreamingError.missingConfiguration.localizedDescription
+            return
+        }
+
+        errorMessage = nil
+
+        let width = videoFrameProcessor.videoWidth > 0 ? videoFrameProcessor.videoWidth : 1920
+        let height = videoFrameProcessor.videoHeight > 0 ? videoFrameProcessor.videoHeight : 1080
+
+        do {
+            try streamingService.startStreaming(
+                url: rtmpURL,
+                streamKey: streamKey,
+                width: width,
+                height: height
+            )
+            setupStreamingCallbacks()
+        } catch {
+            errorMessage = error.localizedDescription
+            streamingState = .idle
+        }
+    }
+
+    /// Starts RTMP live streaming with explicit URL and stream key
+    func startStreaming(url: String, streamKey: String) {
+        guard !isRecording else {
+            errorMessage = "録画中は配信を開始できません"
+            return
+        }
+
+        errorMessage = nil
+
+        let width = videoFrameProcessor.videoWidth > 0 ? videoFrameProcessor.videoWidth : 1920
+        let height = videoFrameProcessor.videoHeight > 0 ? videoFrameProcessor.videoHeight : 1080
+
+        do {
+            try streamingService.startStreaming(
+                url: url,
+                streamKey: streamKey,
+                width: width,
+                height: height
+            )
+            setupStreamingCallbacks()
+        } catch {
+            errorMessage = error.localizedDescription
+            streamingState = .idle
+        }
+    }
+
+    /// Requests streaming stop with a confirmation dialog.
+    /// If streaming is active, sets showStopStreamingConfirmation to true.
+    func requestStopStreaming() {
+        guard streamingState.isActive else { return }
+        showStopStreamingConfirmation = true
+    }
+
+    /// Stops RTMP live streaming and cleans up timer and callbacks
+    func stopStreaming() {
+        teardownStreamingCallbacks()
+        stopStreamingTimer()
+        streamingService.stopStreaming()
+        streamingState = .idle
+    }
+
     // MARK: - Private Methods
 
     private func setupFrameProcessorCallbacks() {
@@ -454,6 +622,46 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func teardownRecordingCallbacks() {
+        videoFrameProcessor.onProcessedPixelBuffer = nil
+        videoFrameProcessor.onAudioSampleBuffer = nil
+    }
+
+    private func setupStreamingStateCallback() {
+        streamingService.onStateChanged = { [weak self] newState in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.streamingState = newState
+
+                switch newState {
+                case .streaming:
+                    // Start the streaming elapsed timer when streaming begins
+                    self.startStreamingTimer()
+                case .error(let message):
+                    self.errorMessage = message
+                    self.teardownStreamingCallbacks()
+                    self.stopStreamingTimer()
+                case .idle:
+                    self.stopStreamingTimer()
+                case .connecting:
+                    break
+                }
+            }
+        }
+    }
+
+    private func setupStreamingCallbacks() {
+        videoFrameProcessor.onProcessedPixelBuffer = { [weak self] pixelBuffer, presentationTime in
+            guard let self else { return }
+            self.streamingService.appendVideo(pixelBuffer, presentationTime: presentationTime)
+        }
+
+        videoFrameProcessor.onAudioSampleBuffer = { [weak self] sampleBuffer in
+            guard let self else { return }
+            self.streamingService.appendAudio(sampleBuffer)
+        }
+    }
+
+    private func teardownStreamingCallbacks() {
         videoFrameProcessor.onProcessedPixelBuffer = nil
         videoFrameProcessor.onAudioSampleBuffer = nil
     }
@@ -505,5 +713,82 @@ final class CameraViewModel: ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
         recordingStartTime = nil
+    }
+
+    // MARK: - Streaming Timer
+
+    private func startStreamingTimer() {
+        // Only start if not already running
+        guard streamingTimer == nil else { return }
+        streamingDuration = 0
+        streamingStartTime = Date()
+        streamingTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let startTime = self.streamingStartTime else { return }
+                self.streamingDuration = Date().timeIntervalSince(startTime)
+            }
+        }
+    }
+
+    private func stopStreamingTimer() {
+        streamingTimer?.invalidate()
+        streamingTimer = nil
+        streamingStartTime = nil
+        streamingDuration = 0
+    }
+
+    // MARK: - Background / Foreground Observers
+
+    private func setupBackgroundObservers() {
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleBackgroundTransition()
+            }
+        }
+
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleForegroundTransition()
+            }
+        }
+    }
+
+    /// Called when the app moves to background. Stops streaming to prevent resource issues.
+    private func handleBackgroundTransition() {
+        if streamingState.isActive {
+            stopStreaming()
+        }
+    }
+
+    /// Called when the app returns to foreground. Ensures UI state is consistent.
+    private func handleForegroundTransition() {
+        // Streaming was stopped on background transition, ensure UI reflects idle state
+        if streamingState != .idle && !streamingService.streamingState.isActive {
+            streamingState = .idle
+            stopStreamingTimer()
+        }
+    }
+
+    // MARK: - Network Monitoring
+
+    private func setupNetworkMonitor() {
+        let monitor = NWPathMonitor()
+        self.networkMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let unsatisfied = (path.status != .satisfied)
+                self.isNetworkUnsatisfied = unsatisfied
+            }
+        }
+        monitor.start(queue: networkMonitorQueue)
     }
 }

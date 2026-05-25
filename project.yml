@@ -13,6 +13,11 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     DEVELOPMENT_TEAM: ""
 
+packages:
+  HaishinKit:
+    url: https://github.com/shogo4405/HaishinKit.swift
+    version: 1.9.9
+
 targets:
   blurCam:
     type: application
@@ -27,6 +32,9 @@ targets:
       - path: blurCam/Resources/FaceNet.mlpackage
       - path: blurCam/Resources/Info.plist
         buildPhase: none
+    dependencies:
+      - package: HaishinKit
+        product: HaishinKit
     settings:
       base:
         INFOPLIST_FILE: blurCam/Resources/Info.plist

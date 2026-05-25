@@ -43,6 +43,15 @@ blurCamは、iPhone向けのプライバシー保護カメラアプリである�
 | F12 | 複数人の顔登録 | 家族・友人など複数人の顔を登録し、全員を保護対象外にできる |
 | F13 | ズーム操作 | ピンチジェスチャーでカメラのズームイン/アウトができる |
 
+### 優先度: 高（ライブ配信機能）
+
+| # | 機能 | 説明 |
+|---|---|---|
+| F14 | RTMP配信エンジン | HaishinKitを使用してRTMPプロトコルでライブ配信を行う。VideoFrameProcessorの処理済みPixelBufferを配信入力として使用し、顔ブラー適用済みの映像をリアルタイムで送出する |
+| F15 | 配信先設定 | RTMP URLとストリームキーを設定画面から入力・保存できる。YouTube Live、Twitch、カスタムRTMPサーバーなど複数のプリセットを用意し、配信先を切り替え可能にする |
+| F16 | 配信操作UI | カメラ画面から配信の開始・停止を行えるUI。配信中は配信状態インジケーター（ライブバッジ）、経過時間、停止ボタンを表示する |
+| F17 | 配信音声キャプチャ | 配信映像にマイク音声を含める。既存のAudioSampleBufferキャプチャ機構を活用し、映像と音声を同期して配信する |
+
 ## 技術スタック推奨
 
 | カテゴリ | 推奨技術 |
@@ -55,6 +64,7 @@ blurCamは、iPhone向けのプライバシー保護カメラアプリである�
 | 顔識別 | Vision Framework (VNGenerateFaceObservationsRequest) + CoreML |
 | 画像処理（ブラー） | Core Image (CIFilter - CIGaussianBlur) / Metal |
 | 動画処理 | AVAssetWriter + リアルタイムフレーム処理 |
+| ライブ配信 | HaishinKit (RTMP) |
 | ローカルデータ保存 | Core Data / FileManager（顔データの端末内保存） |
 | アーキテクチャ | MVVM推奨 |
 

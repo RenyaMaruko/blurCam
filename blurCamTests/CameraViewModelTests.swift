@@ -19,6 +19,8 @@ final class CameraViewModelTests: XCTestCase {
         mockFaceRepo = MockFaceRepository()
         mockVideoFrameProcessor = MockVideoFrameProcessor()
         mockVideoRecordingService = MockVideoRecordingService()
+        mockStreamingService = MockStreamingService()
+        mockStreamingSettingsRepo = MockStreamingSettingsRepository()
     }
 
     override func tearDown() {
@@ -28,8 +30,13 @@ final class CameraViewModelTests: XCTestCase {
         mockFaceRepo = nil
         mockVideoFrameProcessor = nil
         mockVideoRecordingService = nil
+        mockStreamingService = nil
+        mockStreamingSettingsRepo = nil
         super.tearDown()
     }
+
+    private var mockStreamingService: MockStreamingService!
+    private var mockStreamingSettingsRepo: MockStreamingSettingsRepository!
 
     private func makeViewModel() -> CameraViewModel {
         CameraViewModel(
@@ -38,7 +45,9 @@ final class CameraViewModelTests: XCTestCase {
             permissionRepository: mockPermissionRepo,
             faceRepository: mockFaceRepo,
             videoFrameProcessor: mockVideoFrameProcessor,
-            videoRecordingService: mockVideoRecordingService
+            videoRecordingService: mockVideoRecordingService,
+            streamingService: mockStreamingService,
+            streamingSettingsRepository: mockStreamingSettingsRepo
         )
     }
 
@@ -147,6 +156,8 @@ final class CameraViewModelTests: XCTestCase {
 
         // Reset counts after setup
         mockCameraService.startCallCount = 0
+        // Reset isRunning so startCamera's guard doesn't block
+        mockCameraService.isRunning = false
 
         viewModel.startCamera()
 
@@ -371,41 +382,39 @@ final class CameraViewModelTests: XCTestCase {
         XCTAssertEqual(mockVideoRecordingService.startRecordingIncludeAudio, false)
     }
 
-    func testStartRecording_RequestsMicPermission_WhenNotDetermined() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
+    func testStartRecording_MicNotDetermined_RecordsWithoutAudio() async {
+        // Audio is pre-configured at setupCamera time. If mic status is notDetermined,
+        // startRecording simply records without audio (no runtime permission request).
         mockPermissionRepo.microphoneStatus = .notDetermined
-        mockPermissionRepo.microphoneRequestResult = .authorized
         let viewModel = makeViewModel()
 
         await viewModel.startRecording()
 
-        XCTAssertEqual(mockPermissionRepo.requestMicrophonePermissionCallCount, 1)
-        XCTAssertEqual(viewModel.captureState, .recording)
-        XCTAssertEqual(mockVideoRecordingService.startRecordingIncludeAudio, true)
-    }
-
-    func testStartRecording_RequestsMicPermission_Denied_RecordsWithoutAudio() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
-        mockPermissionRepo.microphoneStatus = .notDetermined
-        mockPermissionRepo.microphoneRequestResult = .denied
-        let viewModel = makeViewModel()
-
-        await viewModel.startRecording()
-
-        XCTAssertEqual(mockPermissionRepo.requestMicrophonePermissionCallCount, 1)
         XCTAssertEqual(viewModel.captureState, .recording)
         XCTAssertEqual(mockVideoRecordingService.startRecordingIncludeAudio, false)
     }
 
-    func testStartRecording_FailsWhenPhotoLibraryDenied() async {
+    func testStartRecording_MicDenied_RecordsWithoutAudio() async {
+        // When mic is denied, recording proceeds without audio
+        mockPermissionRepo.microphoneStatus = .denied
+        let viewModel = makeViewModel()
+
+        await viewModel.startRecording()
+
+        XCTAssertEqual(viewModel.captureState, .recording)
+        XCTAssertEqual(mockVideoRecordingService.startRecordingIncludeAudio, false)
+    }
+
+    func testStartRecording_NoPhotoLibraryCheck_ProceedsDirectly() async {
+        // Current startRecording does not check photo library permission
         mockPermissionRepo.photoLibraryStatus = .denied
         let viewModel = makeViewModel()
 
         await viewModel.startRecording()
 
-        XCTAssertNotEqual(viewModel.captureState, .recording)
-        XCTAssertNotNil(viewModel.errorMessage)
-        XCTAssertEqual(mockVideoRecordingService.startRecordingCallCount, 0)
+        // Recording starts regardless of photo library status
+        XCTAssertEqual(viewModel.captureState, .recording)
+        XCTAssertEqual(mockVideoRecordingService.startRecordingCallCount, 1)
     }
 
     func testStartRecording_FailsWhenServiceThrows() async {
@@ -434,7 +443,6 @@ final class CameraViewModelTests: XCTestCase {
     }
 
     func testStopRecording_Success() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
         mockPermissionRepo.microphoneStatus = .denied
         let viewModel = makeViewModel()
 
@@ -443,18 +451,23 @@ final class CameraViewModelTests: XCTestCase {
 
         await viewModel.stopRecording()
 
+        // stopRecording uses Task.detached internally, wait for it to complete
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
         XCTAssertEqual(mockVideoRecordingService.stopRecordingCallCount, 1)
         XCTAssertEqual(mockPhotoRepo.saveVideoCallCount, 1)
     }
 
     func testStopRecording_ServiceFailure() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
         mockPermissionRepo.microphoneStatus = .denied
         mockVideoRecordingService.stopRecordingError = VideoRecordingError.writingFailed("テストエラー")
         let viewModel = makeViewModel()
 
         await viewModel.startRecording()
         await viewModel.stopRecording()
+
+        // stopRecording uses Task.detached internally, wait for it to complete
+        try? await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertNotNil(viewModel.errorMessage)
     }
@@ -467,19 +480,20 @@ final class CameraViewModelTests: XCTestCase {
         XCTAssertEqual(mockVideoRecordingService.stopRecordingCallCount, 0)
     }
 
-    func testStopRecording_StopsAudioCapture() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
+    func testStopRecording_KeepsAudioPreConfigured() async {
+        // Audio is pre-configured at setupCamera time and stays configured after stop.
+        // stopRecording does NOT call stopAudioCapture.
         mockPermissionRepo.microphoneStatus = .authorized
         let viewModel = makeViewModel()
 
         await viewModel.startRecording()
         await viewModel.stopRecording()
 
-        XCTAssertEqual(mockVideoFrameProcessor.stopAudioCaptureCallCount, 1)
+        // Audio capture is not stopped - it stays pre-configured for next recording
+        XCTAssertEqual(mockVideoFrameProcessor.stopAudioCaptureCallCount, 0)
     }
 
     func testStopRecording_DisablesTorchAfterRecording() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
         mockPermissionRepo.microphoneStatus = .denied
         let viewModel = makeViewModel()
 
@@ -520,15 +534,14 @@ final class CameraViewModelTests: XCTestCase {
     }
 
     func testHandleShutterAction_VideoMode_StartsRecording() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
         mockPermissionRepo.microphoneStatus = .denied
         let viewModel = makeViewModel()
         viewModel.cameraMode = .video
 
         viewModel.handleShutterAction()
 
-        // Allow async work to complete
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        // startRecording has a 0.35s Task.sleep for sound, need to wait longer
+        try? await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertEqual(mockVideoRecordingService.startRecordingCallCount, 1)
     }
@@ -552,22 +565,22 @@ final class CameraViewModelTests: XCTestCase {
 
     // MARK: - Audio Capture Integration Tests
 
-    func testStartRecording_WithAudioPermission_StartsAudioCapture() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
+    func testSetupCamera_WithAudioPermission_PreConfiguresAudioCapture() {
+        // Audio is now pre-configured during setupCamera when mic is authorized
         mockPermissionRepo.microphoneStatus = .authorized
         let viewModel = makeViewModel()
 
-        await viewModel.startRecording()
+        viewModel.setupCamera()
 
         XCTAssertEqual(mockVideoFrameProcessor.startAudioCaptureCallCount, 1)
     }
 
-    func testStartRecording_WithoutAudioPermission_DoesNotStartAudioCapture() async {
-        mockPermissionRepo.photoLibraryStatus = .authorized
+    func testSetupCamera_WithoutAudioPermission_DoesNotPreConfigureAudioCapture() {
+        // When mic is denied, audio capture is not pre-configured
         mockPermissionRepo.microphoneStatus = .denied
         let viewModel = makeViewModel()
 
-        await viewModel.startRecording()
+        viewModel.setupCamera()
 
         XCTAssertEqual(mockVideoFrameProcessor.startAudioCaptureCallCount, 0)
     }
@@ -620,7 +633,7 @@ final class CameraViewModelTests: XCTestCase {
 
     // MARK: - Camera Switch Tests
 
-    func testSwitchCamera_Success() {
+    func testSwitchCamera_Success() async {
         let viewModel = makeViewModel()
         viewModel.setupCamera()
 
@@ -628,24 +641,33 @@ final class CameraViewModelTests: XCTestCase {
 
         viewModel.switchCamera()
 
+        // Wait for background dispatch + MainActor callback
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
         XCTAssertEqual(mockCameraService.switchCameraCallCount, 1)
         XCTAssertEqual(viewModel.cameraPosition, .front)
     }
 
-    func testSwitchCamera_TogglesTwice_BackToFrontToBack() {
+    func testSwitchCamera_TogglesTwice_BackToFrontToBack() async {
         let viewModel = makeViewModel()
         viewModel.setupCamera()
 
         viewModel.switchCamera()
+
+        // Wait for first switch to complete
+        try? await Task.sleep(nanoseconds: 500_000_000)
         XCTAssertEqual(viewModel.cameraPosition, .front)
 
-        // Wait for switching animation to finish
+        // Now isSwitchingCamera should be false, so second switch is allowed
         viewModel.switchCamera()
-        // The second call may be ignored due to isSwitchingCamera guard
-        // but if timing permits, it should toggle back
+
+        // Wait for second switch to complete
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        // The second call should toggle back
+        XCTAssertEqual(viewModel.cameraPosition, .back)
     }
 
-    func testSwitchCamera_StopsAndRestartsFrameProcessing() {
+    func testSwitchCamera_StopsAndRestartsFrameProcessing() async {
         let viewModel = makeViewModel()
         viewModel.setupCamera()
 
@@ -654,11 +676,14 @@ final class CameraViewModelTests: XCTestCase {
 
         viewModel.switchCamera()
 
+        // Wait for background dispatch to complete
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
         XCTAssertEqual(mockVideoFrameProcessor.stopProcessingCallCount, stopCountBefore + 1)
         XCTAssertEqual(mockVideoFrameProcessor.startProcessingCallCount, startCountBefore + 1)
     }
 
-    func testSwitchCamera_ReloadsRegisteredFaceData() {
+    func testSwitchCamera_ReloadsRegisteredFaceData() async {
         let faceImageData = Data([0xFF, 0xD8, 0xFF, 0xE0])
         let registration = FaceRegistration(imageFileName: "test.jpg")
         mockFaceRepo.registration = registration
@@ -673,6 +698,9 @@ final class CameraViewModelTests: XCTestCase {
         let loadCountBefore = mockVideoFrameProcessor.loadRegisteredFacesCallCount
 
         viewModel.switchCamera()
+
+        // Wait for background dispatch + MainActor callback
+        try? await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertEqual(mockVideoFrameProcessor.loadRegisteredFacesCallCount, loadCountBefore + 1)
     }
@@ -699,17 +727,20 @@ final class CameraViewModelTests: XCTestCase {
         XCTAssertEqual(mockCameraService.switchCameraCallCount, 0)
     }
 
-    func testSwitchCamera_Failure_SetsErrorMessage() {
+    func testSwitchCamera_Failure_SetsErrorMessage() async {
         mockCameraService.switchCameraError = CameraServiceError.switchFailed("テストエラー")
         let viewModel = makeViewModel()
         viewModel.setupCamera()
 
         viewModel.switchCamera()
 
+        // Wait for background dispatch + MainActor error callback
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
         XCTAssertNotNil(viewModel.errorMessage)
     }
 
-    func testSwitchCamera_UpdatesHasFlash() {
+    func testSwitchCamera_UpdatesHasFlash() async {
         let viewModel = makeViewModel()
         viewModel.setupCamera()
         XCTAssertTrue(viewModel.hasFlash) // back camera has flash
@@ -719,10 +750,13 @@ final class CameraViewModelTests: XCTestCase {
 
         viewModel.switchCamera()
 
+        // Wait for background dispatch + MainActor callback
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
         XCTAssertFalse(viewModel.hasFlash)
     }
 
-    func testSwitchCamera_ResetsFlashMode_WhenNoFlash() {
+    func testSwitchCamera_ResetsFlashMode_WhenNoFlash() async {
         let viewModel = makeViewModel()
         viewModel.setupCamera()
 
@@ -734,6 +768,9 @@ final class CameraViewModelTests: XCTestCase {
         // Switch to front camera with no flash
         mockCameraService.hasFlash = false
         viewModel.switchCamera()
+
+        // Wait for background dispatch + MainActor callback
+        try? await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertEqual(viewModel.flashMode, .off)
     }

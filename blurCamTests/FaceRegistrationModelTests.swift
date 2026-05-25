@@ -25,9 +25,10 @@ final class FaceRegistrationModelTests: XCTestCase {
 
     func testFaceRegistration_Equatable() {
         let id = UUID()
+        let groupId = UUID()
         let date = Date()
-        let reg1 = FaceRegistration(id: id, registeredAt: date, imageFileName: "face.jpg")
-        let reg2 = FaceRegistration(id: id, registeredAt: date, imageFileName: "face.jpg")
+        let reg1 = FaceRegistration(id: id, groupId: groupId, registeredAt: date, imageFileName: "face.jpg")
+        let reg2 = FaceRegistration(id: id, groupId: groupId, registeredAt: date, imageFileName: "face.jpg")
 
         XCTAssertEqual(reg1, reg2)
     }

@@ -4,10 +4,13 @@ import SwiftUI
 /// status bar area at top, and shutter button at bottom.
 /// Displays processed camera frames with face blur applied in real-time.
 /// Supports photo and video modes with mode switching,
-/// camera switching, flash control, media preview, and settings access.
+/// camera switching, flash control, media preview, settings access,
+/// RTMP live streaming with elapsed time, confirmation dialog,
+/// mutual exclusion with recording, and network status monitoring.
 struct CameraPreviewScreen: View {
     @StateObject private var cameraViewModel = CameraViewModel()
     @StateObject private var settingsViewModel = SettingsViewModel()
+    @StateObject private var streamingSettingsViewModel = StreamingSettingsViewModel()
     @ObservedObject var permissionViewModel: PermissionViewModel
 
     @State private var controlsOpacity: Double = 0.0
@@ -63,6 +66,17 @@ struct CameraPreviewScreen: View {
 
                 Spacer()
 
+                // Network warning banner (shown when streaming and network is unstable)
+                if cameraViewModel.streamingState.isActive && cameraViewModel.isNetworkUnsatisfied {
+                    networkWarningBanner
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                            removal: .opacity
+                        ))
+                        .padding(.bottom, DesignTokens.Spacing.space3)
+                        .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.isNetworkUnsatisfied)
+                }
+
                 // Bottom controls area
                 bottomControls
             }
@@ -101,6 +115,7 @@ struct CameraPreviewScreen: View {
         .sheet(isPresented: $showSettings) {
             SettingsView(
                 viewModel: settingsViewModel,
+                streamingSettingsViewModel: streamingSettingsViewModel,
                 onDismiss: {
                     showSettings = false
                 }
@@ -111,6 +126,20 @@ struct CameraPreviewScreen: View {
                 showSettings = false
                 onAllFacesDeleted?()
             }
+        }
+        // Stop streaming confirmation dialog
+        .alert(
+            "配信を終了しますか？",
+            isPresented: $cameraViewModel.showStopStreamingConfirmation
+        ) {
+            Button("終了", role: .destructive) {
+                cameraViewModel.stopStreaming()
+            }
+            Button("キャンセル", role: .cancel) {
+                // Do nothing, streaming continues
+            }
+        } message: {
+            Text("現在の配信を停止します。")
         }
         .statusBarHidden(false)
         .preferredColorScheme(.dark)
@@ -177,7 +206,11 @@ struct CameraPreviewScreen: View {
 
                 Spacer()
 
-                // Settings gear icon -- right aligned, hidden during recording
+                // Streaming button -- next to settings, hidden during recording
+                streamingButton
+                    .opacity(cameraViewModel.isRecording ? 0.0 : 1.0)
+
+                // Settings gear icon -- right aligned, hidden during recording/streaming
                 Button {
                     showSettings = true
                 } label: {
@@ -186,8 +219,8 @@ struct CameraPreviewScreen: View {
                         .foregroundStyle(DesignTokens.Colors.textPrimary)
                         .padding(DesignTokens.Spacing.space2)
                 }
-                .disabled(cameraViewModel.isRecording)
-                .opacity(cameraViewModel.isRecording ? 0.0 : 1.0)
+                .disabled(cameraViewModel.isRecording || cameraViewModel.streamingState.isActive)
+                .opacity(cameraViewModel.isRecording || cameraViewModel.streamingState.isActive ? 0.0 : 1.0)
                 .accessibilityIdentifier("settingsButton")
                 .accessibilityLabel("設定")
                 .accessibilityHint("タップして設定画面を開く")
@@ -201,6 +234,18 @@ struct CameraPreviewScreen: View {
                     duration: cameraViewModel.formattedRecordingDuration
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+
+            // LIVE streaming indicator with elapsed time -- centered
+            if cameraViewModel.streamingState == .streaming {
+                liveIndicator
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            }
+
+            // Connecting indicator -- centered
+            if cameraViewModel.streamingState == .connecting {
+                connectingIndicator
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
         .frame(height: 48)
@@ -220,6 +265,7 @@ struct CameraPreviewScreen: View {
             .allowsHitTesting(false)
         )
         .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.isRecording)
+        .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.streamingState)
         .opacity(controlsOpacity)
         .accessibilityIdentifier("statusBarArea")
     }
@@ -256,6 +302,32 @@ struct CameraPreviewScreen: View {
                     .accessibilityIdentifier("errorMessage")
             }
 
+            // Exclusion message: shown when streaming blocks recording or vice versa
+            if cameraViewModel.streamingState.isActive && cameraViewModel.cameraMode == .video {
+                HStack(spacing: DesignTokens.Spacing.space1) {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: DesignTokens.Typography.xs, weight: DesignTokens.Typography.Weight.medium))
+                        .foregroundStyle(DesignTokens.Colors.textTertiary)
+
+                    Text("配信中は録画できません")
+                        .font(.system(size: DesignTokens.Typography.xs, weight: DesignTokens.Typography.Weight.medium))
+                        .foregroundStyle(DesignTokens.Colors.textTertiary)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.space3)
+                .padding(.vertical, DesignTokens.Spacing.space1)
+                .background(
+                    Capsule()
+                        .fill(DesignTokens.Colors.surface)
+                        .overlay(
+                            Capsule()
+                                .stroke(DesignTokens.Colors.border, lineWidth: 0.5)
+                        )
+                )
+                .padding(.bottom, DesignTokens.Spacing.space2)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .accessibilityIdentifier("exclusionMessage")
+            }
+
             // Zoom indicator
             Text(cameraViewModel.zoomDisplayText)
                     .font(.system(size: DesignTokens.Typography.sm, weight: DesignTokens.Typography.Weight.semibold))
@@ -271,13 +343,14 @@ struct CameraPreviewScreen: View {
 
             // Bottom dark area mimicking iOS Camera
             VStack(spacing: DesignTokens.Spacing.space4) {
-                // Mode selector area
+                // Mode selector area -- disabled during streaming
                 ModeSelectorView(
                     selectedMode: $cameraViewModel.cameraMode,
-                    isRecording: cameraViewModel.isRecording
+                    isRecording: cameraViewModel.isRecording || cameraViewModel.streamingState.isActive
                 )
-                .opacity(cameraViewModel.isRecording ? 0.0 : 1.0)
+                .opacity(cameraViewModel.isRecording || cameraViewModel.streamingState.isActive ? 0.3 : 1.0)
                 .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.isRecording)
+                .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.streamingState)
 
                 // Shutter button and side controls
                 HStack {
@@ -288,17 +361,33 @@ struct CameraPreviewScreen: View {
 
                     Spacer()
 
-                    // Center - Shutter button
-                    ShutterButton(
-                        captureState: cameraViewModel.captureState,
-                        cameraMode: cameraViewModel.cameraMode
-                    ) {
-                        cameraViewModel.handleShutterAction()
+                    // Center - Shutter button with streaming-aware outer ring
+                    ZStack {
+                        // Streaming mode red ring around shutter button
+                        if cameraViewModel.streamingState.isActive {
+                            Circle()
+                                .stroke(DesignTokens.Colors.error.opacity(0.5), lineWidth: 2)
+                                .frame(
+                                    width: DesignTokens.Shutter.outerSize + DesignTokens.Spacing.space3,
+                                    height: DesignTokens.Shutter.outerSize + DesignTokens.Spacing.space3
+                                )
+                                .modifier(StreamingRingModifier())
+                        }
+
+                        ShutterButton(
+                            captureState: cameraViewModel.captureState,
+                            cameraMode: cameraViewModel.cameraMode
+                        ) {
+                            cameraViewModel.handleShutterAction()
+                        }
+                        // Disable shutter in video mode when streaming (mutual exclusion)
+                        .disabled(cameraViewModel.cameraMode == .video && cameraViewModel.streamingState.isActive && !cameraViewModel.isRecording)
+                        .opacity(cameraViewModel.cameraMode == .video && cameraViewModel.streamingState.isActive && !cameraViewModel.isRecording ? 0.4 : 1.0)
                     }
 
                     Spacer()
 
-                    // Right side - camera flip button
+                    // Right side - camera flip button (allowed during streaming)
                     cameraFlipButton
                         .opacity(cameraViewModel.isRecording ? 0.0 : 1.0)
                         .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.isRecording)
@@ -408,5 +497,204 @@ struct CameraPreviewScreen: View {
         .accessibilityIdentifier("cameraFlipButton")
         .accessibilityLabel("カメラ切替")
         .accessibilityHint("タップしてフロントカメラとバックカメラを切り替え")
+    }
+
+    // MARK: - Streaming Button
+
+    private var streamingButton: some View {
+        Button {
+            if cameraViewModel.streamingState.isActive {
+                // Show confirmation dialog instead of immediately stopping
+                cameraViewModel.requestStopStreaming()
+            } else {
+                cameraViewModel.startStreaming()
+            }
+        } label: {
+            Group {
+                if cameraViewModel.streamingState.isActive {
+                    // Active state: compact stop button — understated, camera-native
+                    HStack(spacing: DesignTokens.Spacing.space1) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(DesignTokens.Colors.error)
+                            .frame(width: 8, height: 8)
+
+                        Text("停止")
+                            .font(.system(
+                                size: DesignTokens.Typography.xs,
+                                weight: DesignTokens.Typography.Weight.semibold
+                            ))
+                            .foregroundStyle(DesignTokens.Colors.textPrimary)
+                    }
+                    .padding(.horizontal, DesignTokens.Spacing.space3)
+                    .padding(.vertical, DesignTokens.Spacing.space2)
+                    .background(
+                        Capsule()
+                            .fill(DesignTokens.Colors.surface)
+                            .overlay(
+                                Capsule()
+                                    .stroke(DesignTokens.Colors.borderStrong, lineWidth: 0.5)
+                            )
+                    )
+                } else {
+                    // Idle state: simple antenna icon, matching the gear icon style
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: DesignTokens.Typography.lg, weight: DesignTokens.Typography.Weight.medium))
+                        .foregroundStyle(DesignTokens.Colors.textPrimary)
+                        .padding(DesignTokens.Spacing.space2)
+                }
+            }
+        }
+        .disabled(cameraViewModel.isRecording)
+        .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.streamingState)
+        .accessibilityIdentifier("streamingButton")
+        .accessibilityLabel(cameraViewModel.streamingState.isActive ? "配信停止" : "配信開始")
+        .accessibilityHint("タップして配信を開始または停止")
+    }
+
+    // MARK: - LIVE Indicator (with elapsed time)
+
+    private var liveIndicator: some View {
+        HStack(spacing: 0) {
+            // LIVE label group (dot + text) with tinted background
+            HStack(spacing: DesignTokens.Spacing.space1) {
+                Circle()
+                    .fill(DesignTokens.Colors.textPrimary)
+                    .frame(width: 6, height: 6)
+                    .modifier(BlinkingModifier())
+
+                Text("LIVE")
+                    .font(.system(
+                        size: DesignTokens.Typography.xs,
+                        weight: DesignTokens.Typography.Weight.bold
+                    ))
+                    .kerning(1.0)
+                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.space2)
+            .padding(.vertical, DesignTokens.Spacing.space1)
+            .background(
+                Capsule()
+                    .fill(DesignTokens.Colors.error.opacity(0.85))
+            )
+
+            // Elapsed time — sits adjacent with slight inset
+            Text(cameraViewModel.formattedStreamingDuration)
+                .font(.system(
+                    size: DesignTokens.Typography.xs,
+                    weight: DesignTokens.Typography.Weight.medium
+                ))
+                .monospacedDigit()
+                .foregroundStyle(DesignTokens.Colors.textSecondary)
+                .padding(.leading, DesignTokens.Spacing.space2)
+                .padding(.trailing, DesignTokens.Spacing.space3)
+        }
+        .padding(.vertical, DesignTokens.Spacing.space1)
+        .background(
+            Capsule()
+                .fill(DesignTokens.Colors.primary.opacity(0.5))
+                .overlay(
+                    Capsule()
+                        .stroke(DesignTokens.Colors.border, lineWidth: 0.5)
+                )
+        )
+        .accessibilityIdentifier("liveIndicator")
+        .accessibilityLabel("配信中 \(cameraViewModel.formattedStreamingDuration)")
+    }
+
+    // MARK: - Connecting Indicator
+
+    private var connectingIndicator: some View {
+        HStack(spacing: DesignTokens.Spacing.space1) {
+            ProgressView()
+                .tint(DesignTokens.Colors.textTertiary)
+                .scaleEffect(0.6)
+
+            Text("接続中...")
+                .font(.system(
+                    size: DesignTokens.Typography.xs,
+                    weight: DesignTokens.Typography.Weight.medium
+                ))
+                .foregroundStyle(DesignTokens.Colors.textSecondary)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.space3)
+        .padding(.vertical, DesignTokens.Spacing.space1)
+        .background(
+            Capsule()
+                .fill(DesignTokens.Colors.primary.opacity(0.5))
+                .overlay(
+                    Capsule()
+                        .stroke(DesignTokens.Colors.border, lineWidth: 0.5)
+                )
+        )
+        .accessibilityIdentifier("connectingIndicator")
+        .accessibilityLabel("接続中")
+    }
+
+    // MARK: - Network Warning Banner
+
+    private var networkWarningBanner: some View {
+        HStack(spacing: DesignTokens.Spacing.space2) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: DesignTokens.Typography.sm, weight: DesignTokens.Typography.Weight.medium))
+                .foregroundStyle(DesignTokens.Colors.warning)
+                .symbolRenderingMode(.hierarchical)
+
+            Text("ネットワーク接続が不安定です")
+                .font(.system(size: DesignTokens.Typography.xs, weight: DesignTokens.Typography.Weight.medium))
+                .foregroundStyle(DesignTokens.Colors.textPrimary.opacity(0.9))
+        }
+        .padding(.horizontal, DesignTokens.Spacing.space4)
+        .padding(.vertical, DesignTokens.Spacing.space2)
+        .background(
+            .ultraThinMaterial,
+            in: Capsule()
+        )
+        .overlay(
+            Capsule()
+                .stroke(DesignTokens.Colors.warning.opacity(0.25), lineWidth: 0.5)
+        )
+        .environment(\.colorScheme, .dark)
+        .accessibilityIdentifier("networkWarningBanner")
+        .accessibilityLabel("ネットワーク接続が不安定です")
+    }
+}
+
+// MARK: - Blinking Modifier
+
+/// A ViewModifier that creates a repeating blink animation for the LIVE dot
+struct BlinkingModifier: ViewModifier {
+    @State private var isBlinking: Bool = true
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isBlinking ? 1.0 : 0.2)
+            .animation(
+                .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                value: isBlinking
+            )
+            .onAppear {
+                isBlinking = false
+            }
+    }
+}
+
+// MARK: - Streaming Ring Modifier
+
+/// A ViewModifier that creates a slow, subtle pulse for the streaming ring around the shutter button.
+/// Uses scale rather than opacity for a more refined feel.
+struct StreamingRingModifier: ViewModifier {
+    @State private var isPulsing: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPulsing ? 1.04 : 0.98)
+            .opacity(isPulsing ? 0.7 : 0.35)
+            .animation(
+                .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                value: isPulsing
+            )
+            .onAppear {
+                isPulsing = true
+            }
     }
 }
