@@ -230,13 +230,17 @@ final class CameraViewModel: ObservableObject {
     func startRecording() async {
         guard captureState == .idle else { return }
 
-        // Immediate UI feedback — button changes to square + play sound instantly
+        // Immediate UI feedback — button changes to square instantly
         captureState = .recording
         recordingDuration = 0
         recordingStartTime = Date()
         startRecordingTimer()
-        AudioServicesPlaySystemSound(1117) // iPhone video recording start sound
         errorMessage = nil
+
+        // Play sound and wait for it to finish before starting actual recording
+        // so the sound doesn't get captured in the video audio
+        AudioServicesPlaySystemSound(1117)
+        try? await Task.sleep(nanoseconds: 350_000_000) // Wait for sound to finish (~0.35s)
 
         // Audio is pre-configured at camera setup — just check if it's available
         let includeAudio = (permissionRepository.microphonePermissionStatus() == .authorized)
@@ -265,22 +269,24 @@ final class CameraViewModel: ObservableObject {
     func stopRecording() async {
         guard captureState == .recording || captureState == .stoppingRecording else { return }
 
-        // Immediate UI feedback — button changes back + sound
+        // Immediate UI feedback — button changes back
         captureState = .idle
         stopRecordingTimer()
-        AudioServicesPlaySystemSound(1118) // iPhone video recording stop sound
         cameraService.disableTorch()
         teardownRecordingCallbacks()
 
-        // Heavy work (audio teardown, finalize video, save) on background
-        let processor = videoFrameProcessor
+        // Stop recording first, then play sound (so sound doesn't get in the video)
         let recorder = videoRecordingService
         let photoRepo = photoRepository
 
         Task.detached { [weak self] in
-            // Audio stays configured — no need to tear down between recordings
             do {
                 let videoURL = try await recorder.stopRecording()
+
+                // Play stop sound after recording is finalized
+                await MainActor.run {
+                    AudioServicesPlaySystemSound(1118)
+                }
                 try await photoRepo.saveVideo(videoURL)
                 try? FileManager.default.removeItem(at: videoURL)
 
