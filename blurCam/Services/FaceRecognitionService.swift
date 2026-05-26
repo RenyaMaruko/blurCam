@@ -178,7 +178,7 @@ final class FaceTracker {
 
 // MARK: - Face Recognition Service
 
-/// Face recognition using FaceNet CoreML model with alignment, tracking, and hysteresis.
+/// Face recognition using ArcFace (w600k_mbf) CoreML model with alignment, tracking, and hysteresis.
 final class FaceRecognitionService: FaceRecognitionServiceProtocol {
 
     private(set) var hasRegisteredFace: Bool = false
@@ -187,7 +187,7 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
     private var registeredEmbeddings: [[Float]] = []
 
     /// CoreML model
-    private var faceNetModel: MLModel?
+    private var arcFaceModel: MLModel?
 
     /// CIContext for image processing
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
@@ -206,11 +206,11 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         do {
             let config = MLModelConfiguration()
             config.computeUnits = .cpuAndNeuralEngine
-            let model = try FaceNet(configuration: config)
-            faceNetModel = model.model
-            print("[FaceRecognition] FaceNet model loaded")
+            let model = try ArcFace(configuration: config)
+            arcFaceModel = model.model
+            print("[FaceRecognition] ArcFace model loaded")
         } catch {
-            print("[FaceRecognition] Failed to load FaceNet: \(error)")
+            print("[FaceRecognition] Failed to load ArcFace: \(error)")
         }
     }
 
@@ -253,7 +253,7 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
             return []
         }
 
-        guard hasRegisteredFace, !registeredEmbeddings.isEmpty, faceNetModel != nil else {
+        guard hasRegisteredFace, !registeredEmbeddings.isEmpty, arcFaceModel != nil else {
             // No registered face: return all as unregistered with similarity=0
             return observations.map {
                 DetectedFace(boundingBox: $0.boundingBox, isRegistered: false, confidence: $0.confidence, similarity: 0.0)
@@ -328,16 +328,16 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         return best
     }
 
-    // MARK: - Alignment + FaceNet Inference
+    // MARK: - Alignment + ArcFace Inference
 
-    /// Aligns face using eye landmarks, then runs FaceNet to get L2-normalized embedding
+    /// Aligns face using eye landmarks, then runs ArcFace to get L2-normalized embedding
     private func computeAlignedEmbedding(
         observation: VNFaceObservation,
         ciImage: CIImage,
         imgW: CGFloat,
         imgH: CGFloat
     ) -> [Float]? {
-        guard let model = faceNetModel else { return nil }
+        guard let model = arcFaceModel else { return nil }
 
         // Try alignment with landmarks
         let alignedImage: CIImage
@@ -361,18 +361,18 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
             alignedImage = cropped
         }
 
-        // Render to pixel buffer
-        guard let pixelBuffer = createPixelBuffer(width: 160, height: 160) else { return nil }
+        // Render to pixel buffer (112x112 for ArcFace)
+        guard let pixelBuffer = createPixelBuffer(width: 112, height: 112) else { return nil }
         ciContext.render(alignedImage, to: pixelBuffer)
 
-        // Convert to MLMultiArray and run inference
+        // Convert to MLMultiArray (NCHW format for ArcFace) and run inference
         guard let multiArray = pixelBufferToMultiArray(pixelBuffer) else { return nil }
 
         do {
-            let input = try MLDictionaryFeatureProvider(dictionary: ["face_image": multiArray])
+            let input = try MLDictionaryFeatureProvider(dictionary: ["face_input": multiArray])
             let output = try model.prediction(from: input)
 
-            guard let feat = output.featureValue(for: "var_1980"),
+            guard let feat = output.featureValue(for: "var_854"),
                   let arr = feat.multiArrayValue else { return nil }
 
             var emb = (0..<arr.count).map { arr[$0].floatValue }
@@ -388,7 +388,7 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         }
     }
 
-    /// Align face using eye positions: rotate to level eyes, scale to fixed inter-eye distance, crop 160x160
+    /// Align face using eye positions: rotate to level eyes, scale to fixed inter-eye distance, crop 112x112
     private func alignFace(
         ciImage: CIImage,
         observation: VNFaceObservation,
@@ -398,7 +398,7 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         imgH: CGFloat
     ) -> CIImage? {
         let box = observation.boundingBox
-        let outputSize: CGFloat = 160
+        let outputSize: CGFloat = 112
 
         // Convert landmark centers from face-normalized to image pixel coordinates
         func eyeCenter(_ pts: VNFaceLandmarkRegion2D) -> CGPoint {
@@ -452,8 +452,8 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         guard !expanded.isEmpty, expanded.width > 10, expanded.height > 10 else { return nil }
 
         let cropped = ciImage.cropped(to: expanded)
-        let scaleX = 160.0 / cropped.extent.width
-        let scaleY = 160.0 / cropped.extent.height
+        let scaleX = 112.0 / cropped.extent.width
+        let scaleY = 112.0 / cropped.extent.height
         return cropped
             .transformed(by: CGAffineTransform(translationX: -cropped.extent.origin.x, y: -cropped.extent.origin.y))
             .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
@@ -482,21 +482,25 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         let height = CVPixelBufferGetHeight(pixelBuffer)
         let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
 
-        guard let multiArray = try? MLMultiArray(shape: [1, 160, 160, 3], dataType: .float32) else { return nil }
+        // ArcFace uses NCHW format: (1, 3, 112, 112), normalized to [-1, 1]
+        guard let multiArray = try? MLMultiArray(shape: [1, 3, 112, 112], dataType: .float32) else { return nil }
 
         let pixels = baseAddress.assumingMemoryBound(to: UInt8.self)
+        let channelStride = width * height  // stride between channels in NCHW
 
         for y in 0..<height {
             for x in 0..<width {
                 let offset = y * bytesPerRow + x * 4
+                // BGRA pixel format
                 let b = Float(pixels[offset]) / 127.5 - 1.0
                 let g = Float(pixels[offset + 1]) / 127.5 - 1.0
                 let r = Float(pixels[offset + 2]) / 127.5 - 1.0
 
-                let baseIdx = y * width * 3 + x * 3
-                multiArray[baseIdx] = NSNumber(value: r)
-                multiArray[baseIdx + 1] = NSNumber(value: g)
-                multiArray[baseIdx + 2] = NSNumber(value: b)
+                let spatialIdx = y * width + x
+                // NCHW: channel 0=R, channel 1=G, channel 2=B
+                multiArray[spatialIdx] = NSNumber(value: r)
+                multiArray[channelStride + spatialIdx] = NSNumber(value: g)
+                multiArray[2 * channelStride + spatialIdx] = NSNumber(value: b)
             }
         }
 

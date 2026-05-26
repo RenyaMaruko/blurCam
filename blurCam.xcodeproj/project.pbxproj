@@ -61,6 +61,7 @@
 		785CA00F9BCAD29B135500A1 /* FaceRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34630707B258933EBFC4CD55 /* FaceRegistration.swift */; };
 		79B4D5E122CD613370083058 /* BlurIntensity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8BDF1A6F952B7A725F07660 /* BlurIntensity.swift */; };
 		7A3F787C5F517EF2DF8B3DE8 /* BlurProcessingServiceProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1842DA4A1FC1016F0B75C19F /* BlurProcessingServiceProtocol.swift */; };
+		7A502DB32B0DCF40747145C4 /* ArcFace.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = E52FC33F8BD701781D834870 /* ArcFace.mlpackage */; };
 		7A61408E693E5836E3FADF07 /* MockVideoRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4785FEA622738E2592C798EC /* MockVideoRecordingService.swift */; };
 		7BE21FC5B56B966A82A5DB0C /* blurCamApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDD29708C825F69E7C192453 /* blurCamApp.swift */; };
 		7CBE7AEA0FBD14B08B245350 /* StreamingSettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70EED58474BCF479E76C56A6 /* StreamingSettingsRepository.swift */; };
@@ -83,6 +84,7 @@
 		A12FD23590BF1A32CE39DB66 /* PermissionRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0813DF216413EE96E23DAA /* PermissionRepository.swift */; };
 		A5D4A405608A85F5A5B4AB04 /* MockCameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8506627592D7CBEF1E8B61F6 /* MockCameraService.swift */; };
 		A615C276773CA6216E3C93D6 /* CameraPositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0F5C344EDBAA4BCA4DCDCA /* CameraPositionTests.swift */; };
+		A88FDD1BB001462CF2D0DAD4 /* TrackedFaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2F252B63B304E88F8446DB2 /* TrackedFaceTests.swift */; };
 		B0A4E2E5D1683432B2A167B8 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31DC4219F4ECA200C9BD2AE3 /* RootView.swift */; };
 		B0D513600C673426F32E0DE2 /* BlurIntensityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6F0354F7E9A95A8367859B /* BlurIntensityTests.swift */; };
 		B428FE07CD1FFACECB62608F /* CameraPermissionDeniedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54D47D088ED08381CE435AED /* CameraPermissionDeniedView.swift */; };
@@ -120,7 +122,6 @@
 		FC0A83F4726B79F237FC550C /* FaceAdditionFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC1743061728D62C3DA114C /* FaceAdditionFlowView.swift */; };
 		FDDB690C42AC956025AC695A /* VideoRecordingServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DEC3709F3FF8BDEA7C74E8 /* VideoRecordingServiceTests.swift */; };
 		FE8B944179C13BBB7D0615C2 /* DetectedFaceModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CB77BBB98289CB7844905A2 /* DetectedFaceModelTests.swift */; };
-		AA1B2C3D4E5F6A7B8C9D0E1F /* TrackedFaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C3D4E5F6A7B8C9D0E1F2A /* TrackedFaceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -200,6 +201,7 @@
 		9D7203771EEFC0D9FC9CF6DF /* FaceRepositoryMultiFaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceRepositoryMultiFaceTests.swift; sourceTree = "<group>"; };
 		9F80BD1DF76C117BC114A627 /* FaceCaptureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCaptureViewModel.swift; sourceTree = "<group>"; };
 		9FBE7B38AA08295968D234B6 /* BlurProcessingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlurProcessingService.swift; sourceTree = "<group>"; };
+		A2F252B63B304E88F8446DB2 /* TrackedFaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackedFaceTests.swift; sourceTree = "<group>"; };
 		A401495EF77600D1245371B1 /* blurCamTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = blurCamTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A87BD2483B65659D98053D8E /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
 		A8B5D9E936F3CD60ACA3D276 /* MockStreamingSettingsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockStreamingSettingsRepository.swift; sourceTree = "<group>"; };
@@ -227,6 +229,7 @@
 		D984A8E96FFD4BEFC147C2AB /* MockBlurSettingsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockBlurSettingsRepository.swift; sourceTree = "<group>"; };
 		DE0813DF216413EE96E23DAA /* PermissionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionRepository.swift; sourceTree = "<group>"; };
 		E0E0F86032844C51FFF3C62A /* BlurProcessingServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlurProcessingServiceTests.swift; sourceTree = "<group>"; };
+		E52FC33F8BD701781D834870 /* ArcFace.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = ArcFace.mlpackage; sourceTree = "<group>"; };
 		E5C425B2167E79D304E24EE3 /* SettingsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewModel.swift; sourceTree = "<group>"; };
 		E754F72CCD20C384C0EF853B /* OnboardingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViewModel.swift; sourceTree = "<group>"; };
 		E8BDF1A6F952B7A725F07660 /* BlurIntensity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlurIntensity.swift; sourceTree = "<group>"; };
@@ -249,7 +252,6 @@
 		FD775DB60FB6E678DAE7C86A /* CameraViewModelStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModelStreamingTests.swift; sourceTree = "<group>"; };
 		FDEB438551F03ED2E2D730EE /* FaceRepositoryProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceRepositoryProtocol.swift; sourceTree = "<group>"; };
 		FE0F5C344EDBAA4BCA4DCDCA /* CameraPositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPositionTests.swift; sourceTree = "<group>"; };
-		BB2C3D4E5F6A7B8C9D0E1F2A /* TrackedFaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackedFaceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -403,7 +405,7 @@
 				F0877622CE54F4306B41E093 /* StreamingSettingsRepositoryTests.swift */,
 				C4861FA9E00F8A653D1C4D12 /* StreamingSettingsViewModelTests.swift */,
 				BEFF00E1E80BE60828D447E4 /* StreamingStateTests.swift */,
-				BB2C3D4E5F6A7B8C9D0E1F2A /* TrackedFaceTests.swift */,
+				A2F252B63B304E88F8446DB2 /* TrackedFaceTests.swift */,
 				C0ECCF8A966D65DD0D71FA96 /* VideoFrameProcessorTests.swift */,
 				F0DEC3709F3FF8BDEA7C74E8 /* VideoRecordingServiceTests.swift */,
 				1206DD244E8717983F8019D2 /* Mocks */,
@@ -414,6 +416,7 @@
 		7B89CD67D838D9A5A32F38BF /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				E52FC33F8BD701781D834870 /* ArcFace.mlpackage */,
 				E9A9C7E2F602D595FC5B6920 /* Assets.xcassets */,
 				91E05D37A093E197A7BE6120 /* FaceNet.mlpackage */,
 				92EA47914994D167F5AEB673 /* Info.plist */,
@@ -581,6 +584,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F45B44357D08EC99A9101C95 /* AddStreamingDestinationView.swift in Sources */,
+				7A502DB32B0DCF40747145C4 /* ArcFace.mlpackage in Sources */,
 				79B4D5E122CD613370083058 /* BlurIntensity.swift in Sources */,
 				C1023C11D0354ACC1CE498A7 /* BlurProcessingService.swift in Sources */,
 				7A3F787C5F517EF2DF8B3DE8 /* BlurProcessingServiceProtocol.swift in Sources */,
@@ -696,7 +700,7 @@
 				C1E01B1F18DE07D109426610 /* StreamingSettingsRepositoryTests.swift in Sources */,
 				29BC318221BDB08BF34FBC9C /* StreamingSettingsViewModelTests.swift in Sources */,
 				992B769B5BC8439765631459 /* StreamingStateTests.swift in Sources */,
-				AA1B2C3D4E5F6A7B8C9D0E1F /* TrackedFaceTests.swift in Sources */,
+				A88FDD1BB001462CF2D0DAD4 /* TrackedFaceTests.swift in Sources */,
 				98C02B8DF5DC117DA4E88D00 /* VideoFrameProcessorTests.swift in Sources */,
 				FDDB690C42AC956025AC695A /* VideoRecordingServiceTests.swift in Sources */,
 			);
