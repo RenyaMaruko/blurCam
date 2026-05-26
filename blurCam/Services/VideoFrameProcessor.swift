@@ -438,12 +438,14 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
                 // Smooth the bounding box per-track to prevent jitter
                 let stableBox = smoothBox(trackIndex: trackID, target: box)
 
-                // Use TrackedFace's own isRegistered state (persists across frames via trackID)
-                // This is updated when heavy recognition results come in (see below)
+                // Use TrackedFace's own isRegistered state (persists across frames via trackID).
+                // This is the single source of truth, updated by displayTracker's hysteresis
+                // when FaceNet recognition results arrive.
                 updatedFaces.append(DetectedFace(
                     boundingBox: stableBox,
                     isRegistered: trackedFace.isRegistered,
-                    confidence: Float(trackedFace.isRegistered ? 0.9 : 0.5)
+                    confidence: Float(trackedFace.isRegistered ? 0.9 : 0.5),
+                    similarity: trackedFace.averageSimilarity
                 ))
             }
 
@@ -470,19 +472,21 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
                     orientation: .up
                 )
 
-                // Propagate identity results to displayTracker's TrackedFaces
-                // Match recognition results to display tracks by IoU
-                let displayAssignments = tracker.assign(boxes: faces.map { $0.boundingBox })
-                for (i, (_, displayFace)) in displayAssignments.enumerated() {
-                    if i < faces.count {
-                        // Feed similarity=1.0 for registered, 0.0 for unregistered
-                        _ = displayFace.update(similarity: faces[i].isRegistered ? 1.0 : 0.0)
-                    }
-                }
+                // Propagate ACTUAL similarity values to displayTracker's TrackedFaces.
+                // Use updateSimilarities instead of assign to avoid:
+                //   1. Creating new tracks from the recognition thread
+                //   2. Overwriting track positions (which would break per-frame IoU matching)
+                //   3. Mismatched track IDs between recognition and display
+                let recognitionResults = faces.map { (box: $0.boundingBox, similarity: $0.similarity) }
+                tracker.updateSimilarities(recognitionResults: recognitionResults)
 
-                self?.cachedFaces = faces
+                // Do NOT overwrite cachedFaces here.
+                // The cachedFaces are always generated from displayTracker state
+                // in the per-frame Vision detection block above.
+                // This prevents FaceNet's raw (pre-hysteresis) results from
+                // leaking into the rendering pipeline.
+
                 self?.isRecognitionBusy = false
-                self?.onFacesDetected?(faces)
             }
         }
 

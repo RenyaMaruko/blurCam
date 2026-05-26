@@ -120,6 +120,7 @@
 		FC0A83F4726B79F237FC550C /* FaceAdditionFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC1743061728D62C3DA114C /* FaceAdditionFlowView.swift */; };
 		FDDB690C42AC956025AC695A /* VideoRecordingServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0DEC3709F3FF8BDEA7C74E8 /* VideoRecordingServiceTests.swift */; };
 		FE8B944179C13BBB7D0615C2 /* DetectedFaceModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CB77BBB98289CB7844905A2 /* DetectedFaceModelTests.swift */; };
+		AA1B2C3D4E5F6A7B8C9D0E1F /* TrackedFaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C3D4E5F6A7B8C9D0E1F2A /* TrackedFaceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -165,7 +166,7 @@
 		3B3161021F44E48DBE94DBB4 /* StreamingPlatform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingPlatform.swift; sourceTree = "<group>"; };
 		3C6019179D11B805ED0DB624 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		3DCF137B0D5AC4476CC56B9B /* ProcessedCameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessedCameraPreviewView.swift; sourceTree = "<group>"; };
-		3DE730203E51A39A5CED0AA4 /* blurCam.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = blurCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DE730203E51A39A5CED0AA4 /* blurCam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = blurCam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3EC1743061728D62C3DA114C /* FaceAdditionFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceAdditionFlowView.swift; sourceTree = "<group>"; };
 		42C93B3F84F45E06F7E12C4E /* AddStreamingDestinationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddStreamingDestinationView.swift; sourceTree = "<group>"; };
 		4785FEA622738E2592C798EC /* MockVideoRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockVideoRecordingService.swift; sourceTree = "<group>"; };
@@ -191,7 +192,7 @@
 		795F637200E574E67CA06CD9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		7FB96223A2B8001128EA271E /* PermissionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionViewModel.swift; sourceTree = "<group>"; };
 		8506627592D7CBEF1E8B61F6 /* MockCameraService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockCameraService.swift; sourceTree = "<group>"; };
-		91E05D37A093E197A7BE6120 /* FaceNet.mlpackage */ = {isa = PBXFileReference; path = FaceNet.mlpackage; sourceTree = "<group>"; };
+		91E05D37A093E197A7BE6120 /* FaceNet.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = FaceNet.mlpackage; sourceTree = "<group>"; };
 		92EA47914994D167F5AEB673 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		97E4AC0E3235766C7E620DF5 /* VideoFrameProcessorProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFrameProcessorProtocol.swift; sourceTree = "<group>"; };
 		980B99437EFC7B89DB11C551 /* MockPermissionRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPermissionRepository.swift; sourceTree = "<group>"; };
@@ -216,7 +217,7 @@
 		BEFF00E1E80BE60828D447E4 /* StreamingStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingStateTests.swift; sourceTree = "<group>"; };
 		BF403AA8447C8BD891875BF6 /* BlurSettingsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlurSettingsRepository.swift; sourceTree = "<group>"; };
 		C0ECCF8A966D65DD0D71FA96 /* VideoFrameProcessorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFrameProcessorTests.swift; sourceTree = "<group>"; };
-		C1F65A4007661CAA83BDD224 /* MobileFaceNet.mlpackage */ = {isa = PBXFileReference; path = MobileFaceNet.mlpackage; sourceTree = "<group>"; };
+		C1F65A4007661CAA83BDD224 /* MobileFaceNet.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = MobileFaceNet.mlpackage; sourceTree = "<group>"; };
 		C3318AC2C92250B9BEBC9AA0 /* MockBlurProcessingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockBlurProcessingService.swift; sourceTree = "<group>"; };
 		C4861FA9E00F8A653D1C4D12 /* StreamingSettingsViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingSettingsViewModelTests.swift; sourceTree = "<group>"; };
 		CAC76F31007D647B059BEB1E /* StreamingDestinationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingDestinationTests.swift; sourceTree = "<group>"; };
@@ -248,6 +249,7 @@
 		FD775DB60FB6E678DAE7C86A /* CameraViewModelStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModelStreamingTests.swift; sourceTree = "<group>"; };
 		FDEB438551F03ED2E2D730EE /* FaceRepositoryProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceRepositoryProtocol.swift; sourceTree = "<group>"; };
 		FE0F5C344EDBAA4BCA4DCDCA /* CameraPositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPositionTests.swift; sourceTree = "<group>"; };
+		BB2C3D4E5F6A7B8C9D0E1F2A /* TrackedFaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackedFaceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -401,6 +403,7 @@
 				F0877622CE54F4306B41E093 /* StreamingSettingsRepositoryTests.swift */,
 				C4861FA9E00F8A653D1C4D12 /* StreamingSettingsViewModelTests.swift */,
 				BEFF00E1E80BE60828D447E4 /* StreamingStateTests.swift */,
+				BB2C3D4E5F6A7B8C9D0E1F2A /* TrackedFaceTests.swift */,
 				C0ECCF8A966D65DD0D71FA96 /* VideoFrameProcessorTests.swift */,
 				F0DEC3709F3FF8BDEA7C74E8 /* VideoRecordingServiceTests.swift */,
 				1206DD244E8717983F8019D2 /* Mocks */,
@@ -530,7 +533,6 @@
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
 					01CA0AC2DC7CA71EC90EBEC9 = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					7514CFD6769CBAB82BA57001 = {
@@ -549,7 +551,7 @@
 			mainGroup = 403E5198B6A8542474D21AE8;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				0C8B7185297AABE8BB567CB7 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */,
+				0C8B7185297AABE8BB567CB7 /* XCRemoteSwiftPackageReference "HaishinKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B08CC97DDDD4F8AA0951812E /* Products */;
@@ -694,6 +696,7 @@
 				C1E01B1F18DE07D109426610 /* StreamingSettingsRepositoryTests.swift in Sources */,
 				29BC318221BDB08BF34FBC9C /* StreamingSettingsViewModelTests.swift in Sources */,
 				992B769B5BC8439765631459 /* StreamingStateTests.swift in Sources */,
+				AA1B2C3D4E5F6A7B8C9D0E1F /* TrackedFaceTests.swift in Sources */,
 				98C02B8DF5DC117DA4E88D00 /* VideoFrameProcessorTests.swift in Sources */,
 				FDDB690C42AC956025AC695A /* VideoRecordingServiceTests.swift in Sources */,
 			);
@@ -716,6 +719,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = PL6L66GH87;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = blurCam/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -835,6 +839,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = PL6L66GH87;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = blurCam/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -948,7 +953,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		0C8B7185297AABE8BB567CB7 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */ = {
+		0C8B7185297AABE8BB567CB7 /* XCRemoteSwiftPackageReference "HaishinKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/shogo4405/HaishinKit.swift";
 			requirement = {
@@ -961,7 +966,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		9BA2AF38928B3AB89E3B80F7 /* HaishinKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0C8B7185297AABE8BB567CB7 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */;
+			package = 0C8B7185297AABE8BB567CB7 /* XCRemoteSwiftPackageReference "HaishinKit" */;
 			productName = HaishinKit;
 		};
 /* End XCSwiftPackageProductDependency section */

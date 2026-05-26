@@ -9,37 +9,68 @@ import Vision
 // MARK: - Face Tracker (IoU + Hysteresis)
 
 /// Tracks a single face across frames with similarity history for stable decisions.
+/// Implements "blur-by-default" principle: new faces are always blurred for the first N frames,
+/// and transitioning to unblurred requires sustained high similarity.
 final class TrackedFace {
     let trackID: Int
-    private var simHistory: [Float] = []
+    private(set) var simHistory: [Float] = []
     private(set) var isRegistered = false
     private var missCount = 0
 
-    /// Threshold to transition from unknown → registered (strict)
+    /// Total number of frames this face has been tracked (for initial blur period)
+    private(set) var frameCount: Int = 0
+
+    /// Threshold to transition from unknown -> registered (strict)
     let enterThreshold: Float
-    /// Threshold to transition from registered → unknown (lenient, prevents flickering)
+    /// Threshold to transition from registered -> unknown (lenient, prevents flickering)
     let exitThreshold: Float
     let windowSize: Int
 
-    init(trackID: Int, enter: Float = 0.75, exit: Float = 0.60, window: Int = 7) {
+    /// Number of initial frames during which the face is always blurred regardless of similarity.
+    /// This prevents false unblur on newly appearing faces before enough evidence is gathered.
+    let initialBlurFrames: Int
+
+    init(
+        trackID: Int,
+        enter: Float = 0.55,
+        exit: Float = 0.25,
+        window: Int = 15,
+        initialBlurFrames: Int = 10
+    ) {
         self.trackID = trackID
         self.enterThreshold = enter
         self.exitThreshold = exit
         self.windowSize = window
+        self.initialBlurFrames = initialBlurFrames
     }
 
     /// Feed one frame's similarity. Returns true if face should be blurred.
+    ///
+    /// - blur-by-default: During the first `initialBlurFrames` frames, always returns true (blur).
+    /// - After the initial period, uses hysteresis with asymmetric thresholds:
+    ///   - Enter (unblur): requires sustained high average similarity
+    ///   - Exit (re-blur): triggers more easily to protect privacy
     func update(similarity: Float?) -> Bool {
         missCount = 0
-        let sim = similarity ?? 0  // Fail-safe: unknown → blur
+        frameCount += 1
+        let sim = similarity ?? 0  // Fail-safe: unknown -> blur
         simHistory.append(sim)
         if simHistory.count > windowSize { simHistory.removeFirst() }
+
+        // Blur-by-default: always blur during initial observation period
+        if frameCount <= initialBlurFrames {
+            return true // shouldBlur = true
+        }
+
         let avg = simHistory.reduce(0, +) / Float(simHistory.count)
 
         if isRegistered {
             if avg < exitThreshold { isRegistered = false }
         } else {
-            if avg >= enterThreshold { isRegistered = true }
+            // Only transition to registered if we have enough history
+            if simHistory.count >= min(windowSize, 5) && avg >= enterThreshold {
+                isRegistered = true
+            }
         }
         return !isRegistered
     }
@@ -52,7 +83,13 @@ final class TrackedFace {
     /// Call when face disappears from frame. Returns true if track should be removed.
     func markMissed() -> Bool {
         missCount += 1
-        return missCount > 8  // ~0.8s at 10fps — tolerates brief look-away
+        return missCount > 8  // ~0.8s at 10fps -- tolerates brief look-away
+    }
+
+    /// Current average similarity across the window (for debugging/testing)
+    var averageSimilarity: Float {
+        guard !simHistory.isEmpty else { return 0 }
+        return simHistory.reduce(0, +) / Float(simHistory.count)
     }
 }
 
@@ -97,6 +134,32 @@ final class FaceTracker {
             }
         }
         return result
+    }
+
+    /// Inject similarity values into existing tracks without modifying track positions or creating new tracks.
+    /// Used by the recognition thread to update identity information in the display tracker
+    /// without disturbing the per-frame position tracking.
+    ///
+    /// - Parameter recognitionResults: Array of (boundingBox, similarity) from FaceNet recognition.
+    func updateSimilarities(recognitionResults: [(box: CGRect, similarity: Float)]) {
+        let iouThreshold: CGFloat = 0.3
+        var matchedIDs = Set<Int>()
+
+        for result in recognitionResults {
+            var bestID: Int?
+            var bestIoU: CGFloat = iouThreshold
+            for (id, entry) in tracked where !matchedIDs.contains(id) {
+                let iou = Self.iou(result.box, entry.lastBox)
+                if iou > bestIoU { bestIoU = iou; bestID = id }
+            }
+            if let id = bestID {
+                matchedIDs.insert(id)
+                // Only update similarity, do NOT update lastBox or create new tracks
+                _ = tracked[id]?.face.update(similarity: result.similarity)
+            }
+            // If no match found, silently ignore (the face may not be tracked yet).
+            // This is safe: untracked faces remain blurred by default.
+        }
     }
 
     func reset() {
@@ -191,8 +254,9 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         }
 
         guard hasRegisteredFace, !registeredEmbeddings.isEmpty, faceNetModel != nil else {
+            // No registered face: return all as unregistered with similarity=0
             return observations.map {
-                DetectedFace(boundingBox: $0.boundingBox, isRegistered: false, confidence: $0.confidence)
+                DetectedFace(boundingBox: $0.boundingBox, isRegistered: false, confidence: $0.confidence, similarity: 0.0)
             }
         }
 
@@ -200,33 +264,28 @@ final class FaceRecognitionService: FaceRecognitionServiceProtocol {
         let imgW = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let imgH = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
 
-        // Step 2: Extract boxes for tracking
-        let boxes = observations.map { $0.boundingBox }
-        let assignments = faceTracker.assign(boxes: boxes)
-
-        // Step 3: For each tracked face, compute embedding and update tracker
+        // Step 2: For each face, compute raw similarity (no hysteresis here).
+        // The faceTracker inside this service is NO LONGER used for identity decisions.
+        // Identity decisions are made solely by the displayTracker in VideoFrameProcessor.
         var results: [DetectedFace] = []
-        for (i, obs) in observations.enumerated() {
-            guard i < assignments.count else { break }
-            let trackedFace = assignments[i].face
-
+        for obs in observations {
             // Safety: skip tiny faces
-            var similarity: Float? = nil
+            var sim: Float = 0.0
             if obs.boundingBox.width >= minFaceSize && obs.boundingBox.height >= minFaceSize {
-                similarity = computeSimilarity(observation: obs, ciImage: ciImage, imgW: imgW, imgH: imgH)
+                sim = computeSimilarity(observation: obs, ciImage: ciImage, imgW: imgW, imgH: imgH) ?? 0.0
             }
 
-            let shouldBlur = trackedFace.update(similarity: similarity)
-
+            // Always return isRegistered=false here.
+            // Identity decision is made solely by displayTracker's hysteresis
+            // using the raw similarity value. This prevents raw threshold bypass.
             results.append(DetectedFace(
                 boundingBox: obs.boundingBox,
-                isRegistered: !shouldBlur,
-                confidence: obs.confidence
+                isRegistered: false,
+                confidence: obs.confidence,
+                similarity: sim
             ))
 
-            if let sim = similarity {
-                print("[FaceRecognition] track=\(trackedFace.trackID) sim=\(String(format: "%.3f", sim)) reg=\(!shouldBlur)")
-            }
+            print("[FaceRecognition] sim=\(String(format: "%.3f", sim))")
         }
 
         return results
