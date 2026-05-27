@@ -77,8 +77,13 @@ final class BlurProcessingService: BlurProcessingServiceProtocol {
             return originalImage
         }
 
-        // Step 1: Create a fully blurred version of the image
-        guard let blurredImage = createBlurredImage(from: originalImage) else {
+        // Step 1: Create blurred image with radius proportional to largest face size
+        // This prevents small/distant faces from becoming solid gray blobs
+        let maxFaceHeight = unregisteredFaces.map { $0.boundingBox.height }.max() ?? 0.1
+        let adaptiveRadius = min(blurRadius, CGFloat(imageHeight) * maxFaceHeight * 0.3)
+        let effectiveRadius = max(adaptiveRadius, 8) // Minimum blur to still obscure
+
+        guard let blurredImage = createBlurredImage(from: originalImage, radius: effectiveRadius) else {
             return originalImage
         }
 
@@ -102,10 +107,10 @@ final class BlurProcessingService: BlurProcessingServiceProtocol {
         return blendFilter.outputImage?.cropped(to: originalImage.extent)
     }
 
-    private func createBlurredImage(from image: CIImage) -> CIImage? {
+    private func createBlurredImage(from image: CIImage, radius: CGFloat? = nil) -> CIImage? {
         let blurFilter = CIFilter.gaussianBlur()
         blurFilter.inputImage = image
-        blurFilter.radius = Float(blurRadius)
+        blurFilter.radius = Float(radius ?? blurRadius)
 
         // Clamp the image before blur to prevent edge artifacts
         let clampFilter = CIFilter.affineClamp()
@@ -157,10 +162,12 @@ final class BlurProcessingService: BlurProcessingServiceProtocol {
     }
 
     private func createEllipticalMask(for rect: CGRect) -> CIImage? {
-        // Large padding pushes blur boundary well outside face, hiding any jitter
+        // Adaptive padding: small/distant faces get proportionally larger masks
+        let faceSize = max(rect.width, rect.height)
+        let paddingRatio: CGFloat = faceSize < 100 ? 0.65 : 0.45
         let paddedRect = rect.insetBy(
-            dx: -rect.width * 0.45,
-            dy: -rect.height * 0.45
+            dx: -rect.width * paddingRatio,
+            dy: -rect.height * paddingRatio
         )
 
         // Create a radial gradient with wide soft edge
