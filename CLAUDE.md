@@ -1,6 +1,7 @@
 # Git
 
-- コミットメッセージは必ず日本語で書くこと
+- コミットメッセージは Conventional Commits 形式（`fix:`, `feat:`, `perf:`, `docs:` 等のプレフィックス）を維持し、説明部分を日本語で書くこと
+- 例: `fix: モザイクのチラつきを解消`, `feat: ArcFaceモデルによる顔認識に切り替え`
 
 # Design
 
