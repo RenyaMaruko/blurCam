@@ -18,10 +18,6 @@ final class BlurProcessingService: BlurProcessingServiceProtocol {
 
     var blurRadius: CGFloat = 30.0
 
-    /// Previous frame's mask for temporal blending (reduces flicker)
-    private var previousMask: CIImage?
-    private let maskBlendAlpha: CGFloat = 0.6
-
     /// CIContext backed by Metal for GPU-accelerated rendering
     private let ciContext: CIContext
 
@@ -95,36 +91,13 @@ final class BlurProcessingService: BlurProcessingServiceProtocol {
             return originalImage
         }
 
-        // Step 3: Temporal blend mask with previous frame to reduce flicker
-        let stableMask: CIImage
-        if let prev = previousMask, prev.extent == combinedMask.extent {
-            // Blend: current * alpha + previous * (1 - alpha)
-            let currentWeighted = combinedMask.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: maskBlendAlpha, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: maskBlendAlpha, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: maskBlendAlpha, w: 0),
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: maskBlendAlpha)
-            ])
-            let prevWeighted = prev.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: 1 - maskBlendAlpha, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: 1 - maskBlendAlpha, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: 1 - maskBlendAlpha, w: 0),
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1 - maskBlendAlpha)
-            ])
-            let addFilter = CIFilter.additionCompositing()
-            addFilter.inputImage = currentWeighted
-            addFilter.backgroundImage = prevWeighted
-            stableMask = addFilter.outputImage ?? combinedMask
-        } else {
-            stableMask = combinedMask
-        }
-        previousMask = stableMask
-
-        // Step 4: Composite: blurred where mask is white, original where mask is black
+        // Step 3: Composite: blurred where mask is white, original where mask is black
+        // (Temporal blend removed — caused performance issues. Stability is achieved
+        //  by large mask padding + 1-Euro filter on bounding boxes instead.)
         let blendFilter = CIFilter.blendWithMask()
         blendFilter.inputImage = blurredImage
         blendFilter.backgroundImage = originalImage
-        blendFilter.maskImage = stableMask
+        blendFilter.maskImage = combinedMask
 
         return blendFilter.outputImage?.cropped(to: originalImage.extent)
     }
@@ -184,16 +157,16 @@ final class BlurProcessingService: BlurProcessingServiceProtocol {
     }
 
     private func createEllipticalMask(for rect: CGRect) -> CIImage? {
-        // Larger padding pushes blur boundary away from face edge, hiding jitter
+        // Large padding pushes blur boundary well outside face, hiding any jitter
         let paddedRect = rect.insetBy(
-            dx: -rect.width * 0.35,
-            dy: -rect.height * 0.35
+            dx: -rect.width * 0.45,
+            dy: -rect.height * 0.45
         )
 
-        // Create a radial gradient that forms an ellipse
+        // Create a radial gradient with wide soft edge
         let center = CGPoint(x: paddedRect.midX, y: paddedRect.midY)
-        let radius0 = min(paddedRect.width, paddedRect.height) * 0.35
-        let radius1 = max(paddedRect.width, paddedRect.height) * 0.55
+        let radius0 = min(paddedRect.width, paddedRect.height) * 0.3
+        let radius1 = max(paddedRect.width, paddedRect.height) * 0.65
 
         let radialGradient = CIFilter.radialGradient()
         radialGradient.center = center
