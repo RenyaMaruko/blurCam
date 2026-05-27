@@ -80,11 +80,7 @@ final class ProcessedPreviewUIView: UIView {
         }
     }
 
-    var detectedFaces: [DetectedFace] = [] {
-        didSet {
-            updateFaceOverlays()
-        }
-    }
+    var detectedFaces: [DetectedFace] = []
 
     private var metalView: MTKView?
     private var metalDevice: MTLDevice?
@@ -144,7 +140,7 @@ final class ProcessedPreviewUIView: UIView {
         mtkView.framebufferOnly = false
         mtkView.isPaused = false
         mtkView.enableSetNeedsDisplay = false
-        mtkView.preferredFramesPerSecond = 30
+        mtkView.preferredFramesPerSecond = 60
         mtkView.contentMode = .scaleAspectFill
         mtkView.backgroundColor = .black
         mtkView.autoResizeDrawable = true
@@ -154,8 +150,7 @@ final class ProcessedPreviewUIView: UIView {
     }
 
     private func setupOverlay() {
-        overlayLayer.frame = bounds
-        layer.addSublayer(overlayLayer)
+        // Face indicator overlays removed — not needed for blur-only display
     }
 
     private func setupDisplayLink() {
@@ -168,7 +163,7 @@ final class ProcessedPreviewUIView: UIView {
         // Use a proxy to avoid retain cycle
         let proxy = DisplayLinkProxy(target: self)
         let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.displayLinkFired(_:)))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 20, maximum: 30, preferred: 30)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
@@ -204,7 +199,9 @@ final class ProcessedPreviewUIView: UIView {
 
     // MARK: - Face Overlay
 
-    private func updateFaceOverlays() {
+    private func updateFaceOverlays() { return
+        // Face indicator overlays disabled — blur handles face visualization
+        // Original code kept below for reference but never executes
         CATransaction.begin()
         // Use a short implicit animation for smooth position tracking
         CATransaction.setAnimationDuration(FaceIndicatorStyle.animationDuration)
