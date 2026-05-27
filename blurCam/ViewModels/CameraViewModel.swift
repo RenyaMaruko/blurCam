@@ -684,9 +684,8 @@ final class CameraViewModel: ObservableObject {
             }
         }
 
-        if !faceImageDataArray.isEmpty {
-            videoFrameProcessor.loadRegisteredFaces(from: faceImageDataArray)
-        }
+        // Always update — pass empty array to clear when all faces are deleted
+        videoFrameProcessor.loadRegisteredFaces(from: faceImageDataArray)
     }
 
     private func resetCaptureStateAfterDelay() {

@@ -76,6 +76,9 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
 
     /// Per-face 1-Euro filters keyed by stable track ID
     private var rectFilters: [Int: RectOneEuroFilter] = [:]
+    /// Consecutive frames with no Vision detection — used to clear stale cachedFaces
+    private var noDetectionFrameCount: Int = 0
+    private let maxNoDetectionFrames: Int = 15  // ~0.5s at 30fps
     /// Lightweight tracker for per-frame Vision detection (separate from FaceNet's tracker)
     private let displayTracker = FaceTracker()
 
@@ -423,6 +426,7 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
         if let _ = try? visionHandler.perform([faceRequest]),
            let results = faceRequest.results, !results.isEmpty {
             currentBoxes = results.map { $0.boundingBox }
+            noDetectionFrameCount = 0
 
             // Assign stable track IDs using IoU tracker
             let assignments = displayTracker.assign(boxes: currentBoxes)
@@ -457,9 +461,16 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
             }
 
             onFacesDetected?(cachedFaces)
+        } else {
+            // Vision detected 0 faces — keep cachedFaces for a grace period, then clear
+            noDetectionFrameCount += 1
+            if noDetectionFrameCount > maxNoDetectionFrames {
+                cachedFaces = []
+                onFacesDetected?(cachedFaces)
+            }
         }
 
-        // --- Heavy FaceNet recognition on separate thread (throttled) ---
+        // --- Heavy ArcFace recognition on separate thread (throttled) ---
         if shouldDetect && !isRecognitionBusy {
             lastDetectionTime = currentTime
             isRecognitionBusy = true
