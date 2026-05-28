@@ -7,6 +7,7 @@ struct AddStreamingDestinationView: View {
 
     @ObservedObject var viewModel: StreamingSettingsViewModel
     @State private var isStreamKeyVisible: Bool = false
+    @State private var showDeleteConfirmation: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -259,13 +260,29 @@ struct AddStreamingDestinationView: View {
                     .padding(.top, DesignTokens.Spacing.space2)
                     .accessibilityIdentifier("saveDestinationButton")
                     .accessibilityLabel("配信先を保存")
+
+                    // MARK: - Delete Button (edit mode only)
+
+                    if viewModel.editingDestination != nil {
+                        Button {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Text("この配信先を削除")
+                                .font(.system(size: DesignTokens.Typography.base, weight: DesignTokens.Typography.Weight.medium))
+                                .foregroundStyle(DesignTokens.Colors.error)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, DesignTokens.Spacing.space4)
+                        }
+                        .padding(.top, DesignTokens.Spacing.space2)
+                        .accessibilityIdentifier("deleteDestinationButton")
+                    }
                 }
                 .padding(.horizontal, DesignTokens.Spacing.space4)
                 .padding(.top, DesignTokens.Spacing.space4)
                 .padding(.bottom, DesignTokens.Spacing.space8)
             }
             .background(DesignTokens.Colors.primary)
-            .navigationTitle("配信先を追加")
+            .navigationTitle(viewModel.editingDestination != nil ? "配信先を編集" : "配信先を追加")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(DesignTokens.Colors.backgroundSecondary, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -281,6 +298,18 @@ struct AddStreamingDestinationView: View {
                     .accessibilityIdentifier("cancelAddDestinationButton")
                 }
             }
+        }
+        .alert("配信先の削除", isPresented: $showDeleteConfirmation) {
+            Button("削除", role: .destructive) {
+                if let dest = viewModel.editingDestination {
+                    viewModel.requestDeleteDestination(dest)
+                    viewModel.confirmDeleteDestination()
+                    viewModel.isAddingDestination = false
+                }
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("この配信先を削除しますか？")
         }
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("addStreamingDestinationView")

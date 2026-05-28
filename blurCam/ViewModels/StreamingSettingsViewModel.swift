@@ -32,8 +32,11 @@ final class StreamingSettingsViewModel: ObservableObject {
     /// The ID of the currently selected destination
     @Published private(set) var selectedDestinationId: UUID?
 
-    /// Whether the add destination sheet is presented
+    /// Whether the add/edit destination sheet is presented
     @Published var isAddingDestination: Bool = false
+
+    /// The destination currently being edited (nil = adding new)
+    @Published var editingDestination: StreamingDestination?
 
     /// Whether a delete confirmation alert is shown
     @Published var showDeleteConfirmation: Bool = false
@@ -95,7 +98,7 @@ final class StreamingSettingsViewModel: ObservableObject {
 
     /// Starts the add destination flow
     func startAddingDestination() {
-        // Reset form state
+        editingDestination = nil
         selectedPlatform = .youTube
         formName = ""
         formRTMPURL = StreamingPlatform.youTube.presetURL
@@ -105,25 +108,37 @@ final class StreamingSettingsViewModel: ObservableObject {
         isAddingDestination = true
     }
 
-    /// Validates and saves a new streaming destination
+    /// Starts editing an existing destination
+    func startEditingDestination(_ destination: StreamingDestination) {
+        editingDestination = destination
+        selectedPlatform = destination.platform
+        formName = destination.name
+        formRTMPURL = destination.rtmpURL
+        formStreamKey = destination.streamKey
+        formValidationError = nil
+        isStreamKeyVisible = false
+        isAddingDestination = true
+    }
+
+    /// Validates and saves a streaming destination (new or edited)
     /// - Returns: true if saved successfully, false if validation failed
     @discardableResult
     func saveDestination() -> Bool {
-        // Validate
         if let error = validateForm() {
             formValidationError = error
             return false
         }
 
-        // Generate name if empty
         let name = formName.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayName = name.isEmpty ? selectedPlatform.displayName : name
 
         let destination = StreamingDestination(
+            id: editingDestination?.id ?? UUID(),
             name: displayName,
             platform: selectedPlatform,
             rtmpURL: formRTMPURL.trimmingCharacters(in: .whitespacesAndNewlines),
-            streamKey: formStreamKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            streamKey: formStreamKey.trimmingCharacters(in: .whitespacesAndNewlines),
+            createdAt: editingDestination?.createdAt ?? Date()
         )
 
         repository.saveDestination(destination)
@@ -134,6 +149,7 @@ final class StreamingSettingsViewModel: ObservableObject {
         }
 
         loadDestinations()
+        editingDestination = nil
         isAddingDestination = false
         return true
     }

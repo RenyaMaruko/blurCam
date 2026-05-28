@@ -134,27 +134,9 @@ struct SettingsView: View {
                                     .foregroundStyle(DesignTokens.Colors.textSecondary)
                             }
 
-                            VStack(alignment: .leading, spacing: DesignTokens.Spacing.space1) {
-                                Text("配信設定")
-                                    .font(.system(size: DesignTokens.Typography.base, weight: DesignTokens.Typography.Weight.medium))
-                                    .foregroundStyle(DesignTokens.Colors.textPrimary)
-
-                                if let selected = streamingSettingsViewModel.getSelectedDestination() {
-                                    HStack(spacing: DesignTokens.Spacing.space1) {
-                                        Circle()
-                                            .fill(DesignTokens.Colors.success)
-                                            .frame(width: 5, height: 5)
-                                        Text(selected.name)
-                                            .font(.system(size: DesignTokens.Typography.sm))
-                                            .foregroundStyle(DesignTokens.Colors.textTertiary)
-                                            .lineLimit(1)
-                                    }
-                                } else {
-                                    Text("配信先を設定してください")
-                                        .font(.system(size: DesignTokens.Typography.sm))
-                                        .foregroundStyle(DesignTokens.Colors.textTertiary)
-                                }
-                            }
+                            Text("配信設定")
+                                .font(.system(size: DesignTokens.Typography.base, weight: DesignTokens.Typography.Weight.medium))
+                                .foregroundStyle(DesignTokens.Colors.textPrimary)
 
                             Spacer()
 
