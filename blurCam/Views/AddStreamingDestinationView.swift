@@ -6,7 +6,6 @@ import SwiftUI
 struct AddStreamingDestinationView: View {
 
     @ObservedObject var viewModel: StreamingSettingsViewModel
-    @State private var isStreamKeyVisible: Bool = false
     @State private var showDeleteConfirmation: Bool = false
 
     var body: some View {
@@ -89,8 +88,6 @@ struct AddStreamingDestinationView: View {
                                 TextField(viewModel.selectedPlatform.displayName, text: $viewModel.formName)
                                     .font(.system(size: DesignTokens.Typography.sm))
                                     .foregroundStyle(DesignTokens.Colors.textPrimary)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
                                     .padding(.horizontal, DesignTokens.Spacing.space3)
                                     .padding(.vertical, DesignTokens.Spacing.space3)
                                     .background(
@@ -119,11 +116,8 @@ struct AddStreamingDestinationView: View {
                                 }
 
                                 TextField("rtmp://live.example.com/app", text: $viewModel.formRTMPURL)
-                                    .font(.system(size: DesignTokens.Typography.sm, design: .monospaced))
+                                    .font(.system(size: DesignTokens.Typography.sm))
                                     .foregroundStyle(DesignTokens.Colors.textPrimary)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-                                    .keyboardType(.URL)
                                     .disabled(viewModel.selectedPlatform != .custom)
                                     .opacity(viewModel.selectedPlatform != .custom ? 0.5 : 1.0)
                                     .padding(.horizontal, DesignTokens.Spacing.space3)
@@ -171,34 +165,10 @@ struct AddStreamingDestinationView: View {
                                         .foregroundStyle(DesignTokens.Colors.textSecondary)
                                 }
 
-                                HStack(spacing: DesignTokens.Spacing.space2) {
-                                    Group {
-                                        if isStreamKeyVisible {
-                                            TextField("ストリームキーを入力", text: $viewModel.formStreamKey)
-                                                .accessibilityIdentifier("destinationStreamKeyTextField")
-                                        } else {
-                                            SecureField("ストリームキーを入力", text: $viewModel.formStreamKey)
-                                                .accessibilityIdentifier("destinationStreamKeySecureField")
-                                        }
-                                    }
-                                    .font(.system(size: DesignTokens.Typography.sm, design: .monospaced))
+                                TextField("ストリームキーを入力", text: $viewModel.formStreamKey)
+                                    .font(.system(size: DesignTokens.Typography.sm))
                                     .foregroundStyle(DesignTokens.Colors.textPrimary)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
-
-                                    Button {
-                                        withAnimation(.easeInOut(duration: DesignTokens.Motion.fast)) {
-                                            isStreamKeyVisible.toggle()
-                                        }
-                                    } label: {
-                                        Image(systemName: isStreamKeyVisible ? "eye.slash.fill" : "eye.fill")
-                                            .font(.system(size: DesignTokens.Typography.sm))
-                                            .foregroundStyle(DesignTokens.Colors.textTertiary)
-                                            .contentTransition(.symbolEffect(.replace))
-                                    }
-                                    .accessibilityIdentifier("toggleStreamKeyVisibilityButton")
-                                    .accessibilityLabel(isStreamKeyVisible ? "ストリームキーを隠す" : "ストリームキーを表示")
-                                }
+                                    .accessibilityIdentifier("destinationStreamKeyTextField")
                                 .padding(.horizontal, DesignTokens.Spacing.space3)
                                 .padding(.vertical, DesignTokens.Spacing.space3)
                                 .background(
