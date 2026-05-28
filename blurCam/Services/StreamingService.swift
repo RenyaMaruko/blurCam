@@ -3,6 +3,7 @@ import CoreMedia
 import CoreVideo
 import Foundation
 import HaishinKit
+import VideoToolbox
 
 /// Concrete implementation of StreamingServiceProtocol using HaishinKit RTMP (v1.9.x).
 /// Manages the RTMP connection lifecycle and feeds blur-processed video frames
@@ -73,7 +74,6 @@ final class StreamingService: NSObject, StreamingServiceProtocol {
 
         streamingState = .connecting
         videoFormatDescription = nil
-
         // Build the connection URL and stream name
         // RTMP URL format: rtmp://server/app
         // Stream key is used as the publish stream name
@@ -101,9 +101,10 @@ final class StreamingService: NSObject, StreamingServiceProtocol {
 
         // Configure video codec settings
         rtmpStream.videoSettings.videoSize = .init(width: width, height: height)
-        rtmpStream.videoSettings.bitRate = width * height * 2
+        rtmpStream.videoSettings.profileLevel = kVTProfileLevel_H264_Main_AutoLevel as String
+        rtmpStream.videoSettings.bitRate = 4_500_000
         rtmpStream.videoSettings.maxKeyFrameIntervalDuration = 2
-        rtmpStream.videoSettings.scalingMode = .letterbox
+        rtmpStream.videoSettings.scalingMode = .trim
 
         // Configure audio codec settings
         rtmpStream.audioSettings.bitRate = 128_000
@@ -200,11 +201,12 @@ final class StreamingService: NSObject, StreamingServiceProtocol {
 
         switch code {
         case RTMPConnection.Code.connectSuccess.rawValue:
-            // Connection succeeded, now publish
+            // Connection succeeded — publish is queued by HaishinKit
+            // and sent after createStream completes.
+            // Do NOT set .streaming here; codecs aren't running yet.
             if let publishName = currentStreamName {
                 stream?.publish(publishName)
             }
-            streamingState = .streaming
 
         case RTMPConnection.Code.connectFailed.rawValue:
             let description = data["description"] as? String ?? "接続に失敗しました"
@@ -212,13 +214,18 @@ final class StreamingService: NSObject, StreamingServiceProtocol {
             cleanupConnection()
 
         case RTMPConnection.Code.connectClosed.rawValue:
-            if streamingState == .streaming {
+            if streamingState == .streaming || streamingState == .connecting {
                 streamingState = .error("接続が切断されました")
             }
             cleanupConnection()
 
         case RTMPStream.Code.publishStart.rawValue:
+            // Codecs are now running — safe to start sending frames
             streamingState = .streaming
+
+        case RTMPStream.Code.publishBadName.rawValue:
+            streamingState = .error("ストリームキーが無効です")
+            cleanupConnection()
 
         default:
             break
