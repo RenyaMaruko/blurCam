@@ -53,6 +53,9 @@ protocol VideoFrameProcessorProtocol: AnyObject {
     /// Remove audio capture output from the session.
     func stopAudioCapture()
 
+    /// Re-apply video connection settings after camera input change.
+    func refreshVideoConnection()
+
     /// The dimensions of the current video output frames
     var videoWidth: Int { get }
     var videoHeight: Int { get }

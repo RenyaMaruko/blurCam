@@ -371,58 +371,64 @@ final class CameraViewModel: ObservableObject {
     func switchCamera() {
         guard isCameraConfigured, !isSwitchingCamera, !isRecording else { return }
 
-        // Start animation immediately on main thread
         isSwitchingCamera = true
 
-        // Track whether we're switching during an active stream
-        let wasStreaming = streamingState.isActive
-
-        // If streaming, temporarily remove frame callbacks (keep RTMP connection alive)
-        if wasStreaming {
-            teardownStreamingCallbacks()
-        }
-
-        // Do camera switch on background thread to not block the animation
+        let isStreaming = streamingState.isActive
         let session = cameraService.captureSession
         let processor = videoFrameProcessor
         let service = cameraService
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            session.stopRunning()
-            processor.stopProcessing()
+            if isStreaming {
+                // During streaming: swap camera input without stopping session.
+                // Audio and video keep flowing to RTMP, preventing YouTube disconnect.
+                do {
+                    let newPosition = try service.switchCamera()
+                    processor.refreshVideoConnection()
 
-            do {
-                let newPosition = try service.switchCamera()
-                try processor.startProcessing(on: session)
-                session.startRunning()
-
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.cameraPosition = newPosition
-                    self.hasFlash = service.hasFlash
-                    if !self.hasFlash && self.flashMode != .off {
-                        self.flashMode = .off
-                        service.flashMode = .off
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.cameraPosition = newPosition
+                        self.hasFlash = service.hasFlash
+                        if !self.hasFlash && self.flashMode != .off {
+                            self.flashMode = .off
+                            service.flashMode = .off
+                        }
+                        self.loadRegisteredFaceData()
                     }
-                    self.loadRegisteredFaceData()
-
-                    // Re-establish streaming callbacks so new camera frames go to RTMP
-                    if wasStreaming {
-                        self.setupStreamingCallbacks()
+                } catch {
+                    Task { @MainActor [weak self] in
+                        self?.errorMessage = error.localizedDescription
                     }
                 }
-            } catch {
-                session.startRunning()
-                Task { @MainActor [weak self] in
-                    self?.errorMessage = error.localizedDescription
-                    // Re-establish streaming callbacks even on error
-                    if wasStreaming {
-                        self?.setupStreamingCallbacks()
+            } else {
+                // Not streaming: full stop/restart for clean state
+                session.stopRunning()
+                processor.stopProcessing()
+
+                do {
+                    let newPosition = try service.switchCamera()
+                    try processor.startProcessing(on: session)
+                    session.startRunning()
+
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.cameraPosition = newPosition
+                        self.hasFlash = service.hasFlash
+                        if !self.hasFlash && self.flashMode != .off {
+                            self.flashMode = .off
+                            service.flashMode = .off
+                        }
+                        self.loadRegisteredFaceData()
+                    }
+                } catch {
+                    session.startRunning()
+                    Task { @MainActor [weak self] in
+                        self?.errorMessage = error.localizedDescription
                     }
                 }
             }
 
-            // End animation after camera is ready
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 self?.isSwitchingCamera = false

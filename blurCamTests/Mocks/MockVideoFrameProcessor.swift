@@ -74,4 +74,6 @@ final class MockVideoFrameProcessor: VideoFrameProcessorProtocol {
     func stopAudioCapture() {
         stopAudioCaptureCallCount += 1
     }
+
+    func refreshVideoConnection() {}
 }

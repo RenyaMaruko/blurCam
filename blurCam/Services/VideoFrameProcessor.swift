@@ -169,6 +169,21 @@ final class VideoFrameProcessor: NSObject, VideoFrameProcessorProtocol {
         captureSession = nil
     }
 
+    /// Re-apply video connection settings after camera input change.
+    /// Call this after switching cameras without stopping the session.
+    func refreshVideoConnection() {
+        if let connection = videoOutput.connection(with: .video) {
+            if connection.isVideoRotationAngleSupported(90) {
+                connection.videoRotationAngle = 90
+            }
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
+        }
+        cachedFaces = []
+    }
+
     func startAudioCapture(on session: AVCaptureSession) throws {
         // Add microphone input if not already present
         let hasAudioInput = session.inputs.contains { input in
@@ -510,8 +525,13 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
             let originalImage = CIImage(cvPixelBuffer: pixelBuffer)
             onFrameProcessed?(originalImage)
 
-            // For recording, provide the original pixel buffer
-            onProcessedPixelBuffer?(pixelBuffer, presentationTime)
+            // For recording/streaming, always render through the pool for consistent
+            // pixel format and frame timing (avoids choppy output from format switching)
+            if onProcessedPixelBuffer != nil {
+                if let outputBuffer = renderToPixelBuffer(originalImage, width: imageWidth, height: imageHeight) {
+                    onProcessedPixelBuffer?(outputBuffer, presentationTime)
+                }
+            }
         } else {
             // Apply blur to unregistered faces
             if let processedImage = blurProcessingService.applyBlur(
@@ -522,7 +542,6 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
             ) {
                 onFrameProcessed?(processedImage)
 
-                // For recording, render the processed CIImage to a pixel buffer
                 if onProcessedPixelBuffer != nil {
                     if let outputBuffer = renderToPixelBuffer(processedImage, width: imageWidth, height: imageHeight) {
                         onProcessedPixelBuffer?(outputBuffer, presentationTime)
@@ -531,7 +550,11 @@ extension VideoFrameProcessor: AVCaptureVideoDataOutputSampleBufferDelegate, AVC
             } else {
                 let originalImage = CIImage(cvPixelBuffer: pixelBuffer)
                 onFrameProcessed?(originalImage)
-                onProcessedPixelBuffer?(pixelBuffer, presentationTime)
+                if onProcessedPixelBuffer != nil {
+                    if let outputBuffer = renderToPixelBuffer(originalImage, width: imageWidth, height: imageHeight) {
+                        onProcessedPixelBuffer?(outputBuffer, presentationTime)
+                    }
+                }
             }
         }
     }
