@@ -7,7 +7,11 @@ struct SettingsView: View {
 
     @ObservedObject var viewModel: SettingsViewModel
     @ObservedObject var streamingSettingsViewModel: StreamingSettingsViewModel
+    @ObservedObject var cameraViewModel: CameraViewModel
     let onDismiss: () -> Void
+
+    @State private var showYouTubeStreaming: Bool = false
+    @StateObject private var youTubeStreamingViewModel = YouTubeStreamingViewModel()
 
     var body: some View {
         NavigationStack {
@@ -151,6 +155,50 @@ struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.small))
                     .accessibilityIdentifier("streamingSettingsNavigationLink")
 
+                    // MARK: - YouTube API Streaming Section
+
+                    Button {
+                        showYouTubeStreaming = true
+                    } label: {
+                        HStack(spacing: DesignTokens.Spacing.space3) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(hex: 0xFF0000).opacity(0.1))
+                                    .frame(width: 44, height: 44)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color(hex: 0xFF0000).opacity(0.25), lineWidth: 1)
+                                    )
+
+                                Image(systemName: "play.rectangle.fill")
+                                    .font(.system(size: DesignTokens.Typography.lg, weight: DesignTokens.Typography.Weight.medium))
+                                    .foregroundStyle(Color(hex: 0xFF0000))
+                            }
+
+                            VStack(alignment: .leading, spacing: DesignTokens.Spacing.space1) {
+                                Text("YouTube配信（API連携）")
+                                    .font(.system(size: DesignTokens.Typography.base, weight: DesignTokens.Typography.Weight.medium))
+                                    .foregroundStyle(DesignTokens.Colors.textPrimary)
+
+                                Text("Googleアカウントで自動配信")
+                                    .font(.system(size: DesignTokens.Typography.sm))
+                                    .foregroundStyle(DesignTokens.Colors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: DesignTokens.Typography.sm, weight: DesignTokens.Typography.Weight.medium))
+                                .foregroundStyle(DesignTokens.Colors.textTertiary)
+                        }
+                        .padding(.horizontal, DesignTokens.Spacing.space4)
+                        .padding(.vertical, DesignTokens.Spacing.space3)
+                    }
+                    .background(DesignTokens.Colors.backgroundSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.small))
+                    .accessibilityIdentifier("youTubeAPIStreamingButton")
+                    .accessibilityLabel("YouTube配信（API連携）")
+
                     // MARK: - Privacy Footer
                     HStack(spacing: DesignTokens.Spacing.space2) {
                         Image(systemName: "lock.fill")
@@ -206,6 +254,12 @@ struct SettingsView: View {
                     onCancel: {
                         viewModel.isAddingFace = false
                     }
+                )
+            }
+            .sheet(isPresented: $showYouTubeStreaming) {
+                YouTubeStreamingView(
+                    viewModel: youTubeStreamingViewModel,
+                    cameraViewModel: cameraViewModel
                 )
             }
         }

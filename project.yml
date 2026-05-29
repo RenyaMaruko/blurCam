@@ -36,6 +36,9 @@ targets:
     dependencies:
       - package: HaishinKit
         product: HaishinKit
+    configFiles:
+      Debug: Secrets.xcconfig
+      Release: Secrets.xcconfig
     settings:
       base:
         INFOPLIST_FILE: blurCam/Resources/Info.plist

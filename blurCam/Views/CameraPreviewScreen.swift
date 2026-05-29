@@ -116,6 +116,7 @@ struct CameraPreviewScreen: View {
             SettingsView(
                 viewModel: settingsViewModel,
                 streamingSettingsViewModel: streamingSettingsViewModel,
+                cameraViewModel: cameraViewModel,
                 onDismiss: {
                     showSettings = false
                 }
@@ -609,7 +610,7 @@ struct CameraPreviewScreen: View {
                 .tint(DesignTokens.Colors.textTertiary)
                 .scaleEffect(0.6)
 
-            Text("接続中...")
+            Text(cameraViewModel.youTubeSetupProgressMessage ?? "接続中...")
                 .font(.system(
                     size: DesignTokens.Typography.xs,
                     weight: DesignTokens.Typography.Weight.medium
@@ -627,7 +628,7 @@ struct CameraPreviewScreen: View {
                 )
         )
         .accessibilityIdentifier("connectingIndicator")
-        .accessibilityLabel("接続中")
+        .accessibilityLabel(cameraViewModel.youTubeSetupProgressMessage ?? "接続中")
     }
 
     // MARK: - Network Warning Banner

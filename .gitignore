@@ -21,6 +21,9 @@ Pods/
 *.swp
 *~
 
+# Secrets
+Secrets.xcconfig
+
 # Claude Code
 .claude/*.local.*
 
