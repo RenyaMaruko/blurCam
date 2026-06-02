@@ -181,9 +181,19 @@ final class CameraViewModel: ObservableObject {
             // Start video frame processing for real-time blur
             try videoFrameProcessor.startProcessing(on: cameraService.captureSession)
 
-            // Pre-configure audio capture so recording start/stop doesn't need session reconfiguration
+            // Pre-configure audio capture so recording/streaming has audio
             if permissionRepository.microphonePermissionStatus() == .authorized {
                 try? videoFrameProcessor.startAudioCapture(on: cameraService.captureSession)
+            } else if permissionRepository.microphonePermissionStatus() == .notDetermined {
+                let processor = videoFrameProcessor
+                let session = cameraService.captureSession
+                let repo = permissionRepository
+                Task {
+                    let status = await repo.requestMicrophonePermission()
+                    if status == .authorized {
+                        try? processor.startAudioCapture(on: session)
+                    }
+                }
             }
 
             cameraService.start()
