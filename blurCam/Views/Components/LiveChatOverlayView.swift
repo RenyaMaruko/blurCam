@@ -16,28 +16,26 @@ struct LiveChatOverlayView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.space1) {
-            ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, message in
-                LiveChatMessageRow(message: message)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .bottom).combined(with: .opacity),
-                        removal: .opacity
-                    ))
-                    .opacity(opacityForIndex(index, total: visibleMessages.count))
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.space1) {
+                    ForEach(messages) { message in
+                        LiveChatMessageRow(message: message)
+                            .id(message.id)
+                    }
+                }
+                .padding(.vertical, DesignTokens.Spacing.space1)
+            }
+            .onChange(of: messages.last?.id) { _, newId in
+                if let id = newId {
+                    withAnimation(.easeInOut(duration: DesignTokens.Motion.normal)) {
+                        proxy.scrollTo(id, anchor: .bottom)
+                    }
+                }
             }
         }
-        .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: messages.map(\.id))
+        .frame(maxHeight: 250)
         .accessibilityIdentifier("liveChatOverlay")
-    }
-
-    /// Older messages (further from the bottom) get progressively more transparent
-    private func opacityForIndex(_ index: Int, total: Int) -> Double {
-        guard total > 1 else { return 1.0 }
-        // The last message (newest) is fully opaque, older ones fade
-        let position = Double(total - 1 - index)
-        let maxFade = Double(total - 1)
-        // Fade from 1.0 down to 0.3 for the oldest visible message
-        return max(0.3, 1.0 - (position / maxFade) * 0.7)
     }
 }
 
@@ -88,7 +86,6 @@ struct LiveChatMessageRow: View {
                         weight: DesignTokens.Typography.Weight.normal
                     ))
                     .foregroundStyle(DesignTokens.Colors.textPrimary)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
