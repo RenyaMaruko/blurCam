@@ -77,6 +77,19 @@ struct CameraPreviewScreen: View {
                         .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.isNetworkUnsatisfied)
                 }
 
+                // Live chat overlay (shown during YouTube API streaming with chat messages)
+                if cameraViewModel.isStreaming
+                    && cameraViewModel.isYouTubeAPISession
+                    && !cameraViewModel.liveChatMessages.isEmpty {
+                    LiveChatOverlayView(messages: cameraViewModel.liveChatMessages)
+                        .frame(maxWidth: 300, alignment: .leading)
+                        .padding(.leading, DesignTokens.Spacing.space3)
+                        .padding(.bottom, DesignTokens.Spacing.space2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.liveChatMessages.map(\.id))
+                }
+
                 // Bottom controls area
                 bottomControls
             }

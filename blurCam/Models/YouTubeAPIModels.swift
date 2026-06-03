@@ -334,3 +334,121 @@ struct YouTubeBroadcastUpdateConfig {
     let title: String
     let description: String
 }
+
+// MARK: - Live Chat Models
+
+/// Response from liveBroadcasts.list API used to retrieve liveChatId
+struct YouTubeBroadcastListResponse: Codable {
+    let items: [YouTubeBroadcastResponse]?
+}
+
+/// Response from liveChatMessages.list API
+struct YouTubeLiveChatMessagesResponse: Codable {
+    let kind: String?
+    let etag: String?
+    let nextPageToken: String?
+    let pollingIntervalMillis: Int?
+    let pageInfo: PageInfo?
+    let items: [YouTubeLiveChatMessageItem]?
+
+    struct PageInfo: Codable {
+        let totalResults: Int?
+        let resultsPerPage: Int?
+    }
+}
+
+/// A single live chat message item
+struct YouTubeLiveChatMessageItem: Codable, Identifiable, Equatable {
+    let kind: String?
+    let etag: String?
+    let id: String
+    let snippet: ChatMessageSnippet?
+    let authorDetails: ChatAuthorDetails?
+
+    struct ChatMessageSnippet: Codable, Equatable {
+        let type: String?
+        let liveChatId: String?
+        let authorChannelId: String?
+        let publishedAt: String?
+        let hasDisplayContent: Bool?
+        let displayMessage: String?
+        let textMessageDetails: TextMessageDetails?
+        let superChatDetails: SuperChatDetails?
+
+        struct TextMessageDetails: Codable, Equatable {
+            let messageText: String?
+        }
+
+        struct SuperChatDetails: Codable, Equatable {
+            let amountMicros: String?
+            let currency: String?
+            let amountDisplayString: String?
+            let tier: Int?
+            let userComment: String?
+        }
+    }
+
+    struct ChatAuthorDetails: Codable, Equatable {
+        let channelId: String?
+        let channelUrl: String?
+        let displayName: String?
+        let profileImageUrl: String?
+        let isVerified: Bool?
+        let isChatOwner: Bool?
+        let isChatSponsor: Bool?
+        let isChatModerator: Bool?
+    }
+
+    static func == (lhs: YouTubeLiveChatMessageItem, rhs: YouTubeLiveChatMessageItem) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+/// Simplified chat message model for display in the overlay
+struct LiveChatMessage: Identifiable, Equatable {
+    let id: String
+    let authorName: String
+    let authorImageURL: URL?
+    let message: String
+    let isModerator: Bool
+    let isOwner: Bool
+    let isSuperChat: Bool
+    let superChatAmount: String?
+    let timestamp: Date
+
+    init(from item: YouTubeLiveChatMessageItem) {
+        self.id = item.id
+        self.authorName = item.authorDetails?.displayName ?? "Unknown"
+        self.authorImageURL = URL(string: item.authorDetails?.profileImageUrl ?? "")
+        self.message = item.snippet?.displayMessage
+            ?? item.snippet?.textMessageDetails?.messageText
+            ?? ""
+        self.isModerator = item.authorDetails?.isChatModerator ?? false
+        self.isOwner = item.authorDetails?.isChatOwner ?? false
+        self.isSuperChat = item.snippet?.superChatDetails != nil
+        self.superChatAmount = item.snippet?.superChatDetails?.amountDisplayString
+        self.timestamp = Date()
+    }
+
+    init(
+        id: String,
+        authorName: String,
+        message: String,
+        authorImageURL: URL? = nil,
+        isModerator: Bool = false,
+        isOwner: Bool = false,
+        isSuperChat: Bool = false,
+        superChatAmount: String? = nil,
+        timestamp: Date = Date()
+    ) {
+        self.id = id
+        self.authorName = authorName
+        self.authorImageURL = authorImageURL
+        self.message = message
+        self.isModerator = isModerator
+        self.isOwner = isOwner
+        self.isSuperChat = isSuperChat
+        self.superChatAmount = superChatAmount
+        self.timestamp = timestamp
+    }
+}

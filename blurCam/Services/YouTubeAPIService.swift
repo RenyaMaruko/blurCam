@@ -29,6 +29,12 @@ protocol YouTubeAPIServiceProtocol {
 
     /// Upload a thumbnail for a broadcast (thumbnails.set)
     func uploadThumbnail(broadcastId: String, imageData: Data, mimeType: String, accessToken: String) async throws
+
+    /// Get the liveChatId for a broadcast (liveBroadcasts.list with snippet part)
+    func getLiveChatId(broadcastId: String, accessToken: String) async throws -> String
+
+    /// Fetch live chat messages (liveChatMessages.list)
+    func fetchLiveChatMessages(liveChatId: String, pageToken: String?, accessToken: String) async throws -> YouTubeLiveChatMessagesResponse
 }
 
 /// Service for interacting with YouTube Data API v3 Live Streaming endpoints.
@@ -320,6 +326,65 @@ final class YouTubeAPIService: YouTubeAPIServiceProtocol {
         default:
             let errorMessage = parseErrorMessage(from: data) ?? "HTTP \(httpResponse.statusCode)"
             throw YouTubeAPIError.thumbnailUploadFailed(errorMessage)
+        }
+    }
+
+    func getLiveChatId(broadcastId: String, accessToken: String) async throws -> String {
+        let url = "\(baseURL)/liveBroadcasts?part=snippet,contentDetails&id=\(broadcastId)"
+
+        let data = try await performRequest(
+            url: url,
+            method: "GET",
+            body: nil,
+            accessToken: accessToken
+        )
+
+        do {
+            let response = try JSONDecoder().decode(YouTubeBroadcastListResponse.self, from: data)
+            // Extract liveChatId from snippet
+            // The YouTube API returns liveChatId in snippet for broadcasts with chat enabled
+            guard let broadcast = response.items?.first else {
+                throw YouTubeAPIError.invalidResponse("Broadcast not found for ID: \(broadcastId)")
+            }
+
+            // liveChatId is in snippet for the broadcast
+            // We need to parse it from the raw JSON since our model may not have it
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let items = json["items"] as? [[String: Any]],
+               let firstItem = items.first,
+               let snippet = firstItem["snippet"] as? [String: Any],
+               let liveChatId = snippet["liveChatId"] as? String,
+               !liveChatId.isEmpty {
+                return liveChatId
+            }
+
+            throw YouTubeAPIError.invalidResponse("liveChatId not available for broadcast: \(broadcast.id)")
+        } catch let error as YouTubeAPIError {
+            throw error
+        } catch {
+            throw YouTubeAPIError.invalidResponse("LiveChatId response: \(error.localizedDescription)")
+        }
+    }
+
+    func fetchLiveChatMessages(liveChatId: String, pageToken: String?, accessToken: String) async throws -> YouTubeLiveChatMessagesResponse {
+        var urlString = "\(baseURL)/liveChat/messages?liveChatId=\(liveChatId)&part=snippet,authorDetails&maxResults=200"
+
+        if let pageToken = pageToken, !pageToken.isEmpty {
+            urlString += "&pageToken=\(pageToken)"
+        }
+
+        let data = try await performRequest(
+            url: urlString,
+            method: "GET",
+            body: nil,
+            accessToken: accessToken
+        )
+
+        do {
+            let response = try JSONDecoder().decode(YouTubeLiveChatMessagesResponse.self, from: data)
+            return response
+        } catch {
+            throw YouTubeAPIError.invalidResponse("LiveChat messages: \(error.localizedDescription)")
         }
     }
 

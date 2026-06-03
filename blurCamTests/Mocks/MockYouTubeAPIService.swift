@@ -108,6 +108,18 @@ final class MockYouTubeAPIService: YouTubeAPIServiceProtocol {
 
     var uploadThumbnailError: Error?
 
+    var getLiveChatIdResult: Result<String, Error> = .success("mock-live-chat-id")
+    var fetchLiveChatMessagesResult: Result<YouTubeLiveChatMessagesResponse, Error> = .success(
+        YouTubeLiveChatMessagesResponse(
+            kind: "youtube#liveChatMessageListResponse",
+            etag: "mock-etag",
+            nextPageToken: "mock-page-token",
+            pollingIntervalMillis: 5000,
+            pageInfo: YouTubeLiveChatMessagesResponse.PageInfo(totalResults: 0, resultsPerPage: 200),
+            items: []
+        )
+    )
+
     // MARK: - Call Tracking
 
     var createBroadcastCallCount = 0
@@ -143,6 +155,15 @@ final class MockYouTubeAPIService: YouTubeAPIServiceProtocol {
     var uploadThumbnailImageData: [Data] = []
     var uploadThumbnailMimeTypes: [String] = []
     var uploadThumbnailAccessTokens: [String] = []
+
+    var getLiveChatIdCallCount = 0
+    var getLiveChatIdBroadcastIds: [String] = []
+    var getLiveChatIdAccessTokens: [String] = []
+
+    var fetchLiveChatMessagesCallCount = 0
+    var fetchLiveChatMessagesLiveChatIds: [String] = []
+    var fetchLiveChatMessagesPageTokens: [String?] = []
+    var fetchLiveChatMessagesAccessTokens: [String] = []
 
     // MARK: - YouTubeAPIServiceProtocol
 
@@ -269,6 +290,33 @@ final class MockYouTubeAPIService: YouTubeAPIServiceProtocol {
         uploadThumbnailAccessTokens.append(accessToken)
 
         if let error = uploadThumbnailError {
+            throw error
+        }
+    }
+
+    func getLiveChatId(broadcastId: String, accessToken: String) async throws -> String {
+        getLiveChatIdCallCount += 1
+        getLiveChatIdBroadcastIds.append(broadcastId)
+        getLiveChatIdAccessTokens.append(accessToken)
+
+        switch getLiveChatIdResult {
+        case .success(let chatId):
+            return chatId
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func fetchLiveChatMessages(liveChatId: String, pageToken: String?, accessToken: String) async throws -> YouTubeLiveChatMessagesResponse {
+        fetchLiveChatMessagesCallCount += 1
+        fetchLiveChatMessagesLiveChatIds.append(liveChatId)
+        fetchLiveChatMessagesPageTokens.append(pageToken)
+        fetchLiveChatMessagesAccessTokens.append(accessToken)
+
+        switch fetchLiveChatMessagesResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
             throw error
         }
     }

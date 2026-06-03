@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C2F1F967BC9FD69EE68A47ED /* YouTubeLiveChatServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C20F3825D67548B3981DDFB /* YouTubeLiveChatServiceTests.swift */; };
+		8FA5EA0777FCAED6B4F2773B /* MockYouTubeLiveChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C68F809BE2BFB824B069E95B /* MockYouTubeLiveChatService.swift */; };
+		6A32F6AAD0B6206CF22AEA03 /* LiveChatOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 739F232694B899570536C774 /* LiveChatOverlayView.swift */; };
+		435F0B5C49FD84F12817989C /* YouTubeLiveChatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EB3988AACEE8324F24FF08 /* YouTubeLiveChatService.swift */; };
 		013AF2C0C40E7C2B2D1ABD72 /* YouTubeLiveSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BC367580A00361CA4DD44A /* YouTubeLiveSettings.swift */; };
 		0213C785711D86A2393DF6C8 /* MockFaceDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26BD3C5E09154EB2CD3C7786 /* MockFaceDetectionService.swift */; };
 		032D61BDAEBF4B91029102BD /* PhotoRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C50FE75008FF9933A07093 /* PhotoRepository.swift */; };
@@ -161,6 +165,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		5C20F3825D67548B3981DDFB /* YouTubeLiveChatServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeLiveChatServiceTests.swift; sourceTree = "<group>"; };
+		C68F809BE2BFB824B069E95B /* MockYouTubeLiveChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockYouTubeLiveChatService.swift; sourceTree = "<group>"; };
+		739F232694B899570536C774 /* LiveChatOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChatOverlayView.swift; sourceTree = "<group>"; };
+		15EB3988AACEE8324F24FF08 /* YouTubeLiveChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeLiveChatService.swift; sourceTree = "<group>"; };
 		004946C3CBC59956A72D1C04 /* VideoFrameProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoFrameProcessor.swift; sourceTree = "<group>"; };
 		07178B4B56DA8E3A8AC58E57 /* DetectedFace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectedFace.swift; sourceTree = "<group>"; };
 		0808638285F629F6DCE3F8EB /* CameraMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMode.swift; sourceTree = "<group>"; };
@@ -323,6 +331,7 @@
 			children = (
 				27407283EDA5A0C7D91C7B2C /* MockGoogleAuthService.swift */,
 				914258CFB47D8CC998C915CB /* MockYouTubeAPIService.swift */,
+				C68F809BE2BFB824B069E95B /* MockYouTubeLiveChatService.swift */,
 				C3318AC2C92250B9BEBC9AA0 /* MockBlurProcessingService.swift */,
 				D984A8E96FFD4BEFC147C2AB /* MockBlurSettingsRepository.swift */,
 				8506627592D7CBEF1E8B61F6 /* MockCameraService.swift */,
@@ -418,6 +427,7 @@
 				3813BDF7B5D0D5C079537316 /* ModeSelectorView.swift */,
 				3DCF137B0D5AC4476CC56B9B /* ProcessedCameraPreviewView.swift */,
 				B709374F09181AD6DF414ACA /* RecordingIndicatorView.swift */,
+				739F232694B899570536C774 /* LiveChatOverlayView.swift */,
 				D89E73B99827006E733BB811 /* ShutterButton.swift */,
 			);
 			path = Components;
@@ -437,6 +447,7 @@
 			children = (
 				CCCE435F42883621971F4118 /* GoogleAuthServiceTests.swift */,
 				79D3B71C28F35CF00816D163 /* YouTubeAPIServiceTests.swift */,
+				5C20F3825D67548B3981DDFB /* YouTubeLiveChatServiceTests.swift */,
 				BCD2DF2404050AAC33FC8665 /* YouTubeAPIModelsTests.swift */,
 				6565A0EB3047F07634A4B156 /* YouTubeStreamingViewModelTests.swift */,
 				5E6F0354F7E9A95A8367859B /* BlurIntensityTests.swift */,
@@ -501,6 +512,7 @@
 			children = (
 				4FDCF37464866E85ECF350E6 /* GoogleAuthService.swift */,
 				50D2C25AEC123E6EDD63A402 /* YouTubeAPIService.swift */,
+				15EB3988AACEE8324F24FF08 /* YouTubeLiveChatService.swift */,
 				9FBE7B38AA08295968D234B6 /* BlurProcessingService.swift */,
 				1842DA4A1FC1016F0B75C19F /* BlurProcessingServiceProtocol.swift */,
 				D7748E800F6237FD6CAD5880 /* CameraService.swift */,
@@ -662,6 +674,8 @@
 			files = (
 				BB1E4B7F654842007336E8B2 /* GoogleAuthService.swift in Sources */,
 				3185D72683FD0072B9B05DC9 /* YouTubeAPIService.swift in Sources */,
+				6A32F6AAD0B6206CF22AEA03 /* LiveChatOverlayView.swift in Sources */,
+				435F0B5C49FD84F12817989C /* YouTubeLiveChatService.swift in Sources */,
 				3B5ACC6BB8B9DF182283F1BC /* YouTubeAPIModels.swift in Sources */,
 				0B43C1B27233177A8B6F8EF1 /* YouTubeStreamingViewModel.swift in Sources */,
 				BAD3C38D371C32FC7A58F4AB /* YouTubeStreamingView.swift in Sources */,
@@ -751,6 +765,8 @@
 				85A11F946D227F2DB05FA209 /* YouTubeStreamingViewModelTests.swift in Sources */,
 				CC7B90914A1C0ABA043AE56E /* MockGoogleAuthService.swift in Sources */,
 				1250D32D8891A9620A41B4AD /* MockYouTubeAPIService.swift in Sources */,
+				C2F1F967BC9FD69EE68A47ED /* YouTubeLiveChatServiceTests.swift in Sources */,
+				8FA5EA0777FCAED6B4F2773B /* MockYouTubeLiveChatService.swift in Sources */,
 				B0D513600C673426F32E0DE2 /* BlurIntensityTests.swift in Sources */,
 				2E47E16AF9AFEC9EC74C19EC /* BlurProcessingServiceTests.swift in Sources */,
 				7ED4EC8E20C69F634C6D64CF /* BlurSettingsRepositoryTests.swift in Sources */,

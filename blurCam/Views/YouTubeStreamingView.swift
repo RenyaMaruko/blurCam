@@ -449,10 +449,13 @@ struct YouTubeStreamingView: View {
             Button {
                 Task {
                     if let rtmpInfo = await viewModel.setupLiveStream() {
-                        // Set the YouTube VM reference on camera VM for lifecycle management
                         cameraViewModel.youTubeStreamingViewModel = viewModel
-                        // Auto-connect: pass RTMP URL and stream key to existing StreamingService
-                        cameraViewModel.startStreaming(url: rtmpInfo.rtmpURL, streamKey: rtmpInfo.streamKey, isYouTubeAPI: true)
+                        cameraViewModel.startStreaming(
+                            url: rtmpInfo.rtmpURL,
+                            streamKey: rtmpInfo.streamKey,
+                            isYouTubeAPI: true,
+                            broadcastId: rtmpInfo.broadcastId
+                        )
                         dismiss()
                     }
                 }

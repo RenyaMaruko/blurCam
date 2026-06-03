@@ -74,6 +74,12 @@ final class CameraViewModel: ObservableObject {
     /// Progress message displayed during YouTube API setup (e.g., "配信枠を作成中...")
     @Published private(set) var youTubeSetupProgressMessage: String?
 
+    /// Live chat messages from YouTube Live Chat API (displayed as overlay)
+    @Published var liveChatMessages: [LiveChatMessage] = []
+
+    /// Maximum number of chat messages to retain in memory
+    private let maxChatMessages = 50
+
     // MARK: - Dependencies
 
     private let cameraService: CameraServiceProtocol
@@ -87,6 +93,7 @@ final class CameraViewModel: ObservableObject {
     private let googleAuthService: GoogleAuthServiceProtocol
     private let youTubeAPIService: YouTubeAPIServiceProtocol
     private let youTubeLiveSettingsRepository: YouTubeLiveSettingsRepositoryProtocol
+    private var liveChatService: YouTubeLiveChatServiceProtocol?
 
     // MARK: - Public Properties
 
@@ -151,7 +158,8 @@ final class CameraViewModel: ObservableObject {
         streamingSettingsRepository: StreamingSettingsRepositoryProtocol? = nil,
         googleAuthService: GoogleAuthServiceProtocol? = nil,
         youTubeAPIService: YouTubeAPIServiceProtocol? = nil,
-        youTubeLiveSettingsRepository: YouTubeLiveSettingsRepositoryProtocol? = nil
+        youTubeLiveSettingsRepository: YouTubeLiveSettingsRepositoryProtocol? = nil,
+        liveChatService: YouTubeLiveChatServiceProtocol? = nil
     ) {
         self.cameraService = cameraService
         self.photoRepository = photoRepository
@@ -161,9 +169,15 @@ final class CameraViewModel: ObservableObject {
         self.videoRecordingService = videoRecordingService ?? VideoRecordingService()
         self.streamingService = streamingService ?? StreamingService()
         self.streamingSettingsRepository = streamingSettingsRepository ?? StreamingSettingsRepository()
-        self.googleAuthService = googleAuthService ?? GoogleAuthService()
-        self.youTubeAPIService = youTubeAPIService ?? YouTubeAPIService()
+        let resolvedGoogleAuth = googleAuthService ?? GoogleAuthService()
+        self.googleAuthService = resolvedGoogleAuth
+        let resolvedYouTubeAPI = youTubeAPIService ?? YouTubeAPIService()
+        self.youTubeAPIService = resolvedYouTubeAPI
         self.youTubeLiveSettingsRepository = youTubeLiveSettingsRepository ?? YouTubeLiveSettingsRepository()
+        self.liveChatService = liveChatService ?? YouTubeLiveChatService(
+            apiService: resolvedYouTubeAPI,
+            authService: resolvedGoogleAuth
+        )
 
         setupFrameProcessorCallbacks()
         setupStreamingStateCallback()
@@ -183,6 +197,8 @@ final class CameraViewModel: ObservableObject {
         networkMonitor = nil
         recordingTimer?.invalidate()
         streamingTimer?.invalidate()
+        liveChatService?.stopPolling()
+        liveChatService = nil
         internalLifecycleManager?.stopMonitoring()
         internalLifecycleManager = nil
     }
@@ -561,29 +577,26 @@ final class CameraViewModel: ObservableObject {
         if let destination = streamingSettingsRepository.loadSelectedDestination(),
            destination.platform == .youTube {
 
-            // Determine if YouTube API mode is active:
-            // - User is signed in with Google
-            // - Live settings have a non-empty title
             let isSignedIn = googleAuthService.authState.isSignedIn
             let liveSettings = youTubeLiveSettingsRepository.loadSettings()
             let title = liveSettings.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let hasManualStreamKey = !destination.streamKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
+            print("[Streaming] YouTube destination: signedIn=\(isSignedIn), title='\(title)', manualKey=\(hasManualStreamKey)")
+
             if isSignedIn && !title.isEmpty {
-                // Use YouTube API flow (automatic broadcast/stream creation)
+                print("[Streaming] → YouTube API flow")
                 Task {
                     await startYouTubeAPIStreaming(settings: liveSettings)
                 }
                 return
             } else if !isSignedIn && !hasManualStreamKey {
-                // YouTube destination without sign-in and no manual stream key — prompt login
                 errorMessage = "Googleアカウントにログインしてください"
                 return
             }
-            // Otherwise: fall through to manual RTMP with the destination's URL/key
+            print("[Streaming] → Manual RTMP fallback")
         }
 
-        // Fall back to manual RTMP flow
         startManualStreaming()
     }
 
@@ -729,7 +742,8 @@ final class CameraViewModel: ObservableObject {
 
     /// Starts RTMP live streaming with explicit URL and stream key.
     /// When isYouTubeAPI is true, the lifecycle manager will be started after RTMP connects.
-    func startStreaming(url: String, streamKey: String, isYouTubeAPI: Bool = false) {
+    /// broadcastId is used to start live chat polling for YouTube API sessions.
+    func startStreaming(url: String, streamKey: String, isYouTubeAPI: Bool = false, broadcastId: String? = nil) {
         guard !isRecording else {
             errorMessage = "録画中は配信を開始できません"
             return
@@ -749,6 +763,11 @@ final class CameraViewModel: ObservableObject {
                 height: height
             )
             setupStreamingCallbacks()
+
+            // Start chat polling if YouTube API session with broadcastId
+            if isYouTubeAPI, let bid = broadcastId {
+                startLiveChatPolling(broadcastId: bid)
+            }
         } catch {
             errorMessage = error.localizedDescription
             streamingState = .idle
@@ -783,10 +802,53 @@ final class CameraViewModel: ObservableObject {
 
         teardownStreamingCallbacks()
         stopStreamingTimer()
+        stopLiveChatPolling()
         streamingService.stopStreaming()
         streamingState = .idle
         isYouTubeAPISession = false
         youTubeSetupProgressMessage = nil
+    }
+
+    // MARK: - Live Chat
+
+    /// Starts live chat polling for the current YouTube API streaming session.
+    /// Called automatically when YouTube API streaming reaches the .streaming state.
+    private func startLiveChatPolling(broadcastId: String) {
+        print("[LiveChat] Starting for broadcast: \(broadcastId)")
+        guard let chatService = liveChatService else {
+            print("[LiveChat] No chat service")
+            return
+        }
+
+        chatService.onNewMessages = { [weak self] newMessages in
+            guard let self else { return }
+            print("[LiveChat] Received \(newMessages.count) messages")
+            self.liveChatMessages.append(contentsOf: newMessages)
+            if self.liveChatMessages.count > self.maxChatMessages {
+                self.liveChatMessages = Array(self.liveChatMessages.suffix(self.maxChatMessages))
+            }
+        }
+
+        chatService.onError = { error in
+            print("[LiveChat] Error: \(error.localizedDescription)")
+        }
+
+        Task {
+            do {
+                let accessToken = try await googleAuthService.getAccessToken()
+                print("[LiveChat] Got token, starting poll...")
+                try await chatService.startPolling(broadcastId: broadcastId, accessToken: accessToken)
+                print("[LiveChat] Polling started")
+            } catch {
+                print("[LiveChat] Failed: \(error)")
+            }
+        }
+    }
+
+    /// Stops live chat polling and clears messages
+    private func stopLiveChatPolling() {
+        liveChatService?.stopPolling()
+        liveChatMessages.removeAll()
     }
 
     // MARK: - Private Methods
@@ -841,17 +903,23 @@ final class CameraViewModel: ObservableObject {
                         }
                         // Also notify external view model if set
                         self.youTubeStreamingViewModel?.startBroadcastLifecycle()
+                        // Start live chat polling for YouTube API sessions
+                        if let broadcastId = self.internalLifecycleManager?.broadcastId {
+                            self.startLiveChatPolling(broadcastId: broadcastId)
+                        }
                     }
                 case .error(let message):
                     self.errorMessage = message
                     self.teardownStreamingCallbacks()
                     self.stopStreamingTimer()
+                    self.stopLiveChatPolling()
                     if self.isYouTubeAPISession {
                         self.internalLifecycleManager?.stopMonitoring()
                         self.youTubeStreamingViewModel?.stopLifecycleMonitoring()
                     }
                 case .idle:
                     self.stopStreamingTimer()
+                    self.stopLiveChatPolling()
                 case .connecting:
                     break
                 }

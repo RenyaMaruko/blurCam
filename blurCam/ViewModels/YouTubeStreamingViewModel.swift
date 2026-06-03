@@ -63,14 +63,21 @@ final class YouTubeStreamingViewModel: ObservableObject {
     /// Whether the thumbnail upload succeeded
     @Published private(set) var thumbnailUploadSuccess: Bool = false
 
+    /// Live chat messages from YouTube Live Chat API
+    @Published private(set) var liveChatMessages: [LiveChatMessage] = []
+
+
     // MARK: - Dependencies
 
     private let googleAuthService: GoogleAuthServiceProtocol
     private let youTubeAPIService: YouTubeAPIServiceProtocol
+    private var liveChatService: YouTubeLiveChatServiceProtocol?
 
     // MARK: - Lifecycle Manager
 
     private(set) var lifecycleManager: YouTubeBroadcastLifecycleManager?
+
+    private let maxChatMessages = 50
 
     // MARK: - Initialization
 
@@ -78,8 +85,11 @@ final class YouTubeStreamingViewModel: ObservableObject {
         googleAuthService: GoogleAuthServiceProtocol? = nil,
         youTubeAPIService: YouTubeAPIServiceProtocol? = nil
     ) {
-        self.googleAuthService = googleAuthService ?? GoogleAuthService()
-        self.youTubeAPIService = youTubeAPIService ?? YouTubeAPIService()
+        let resolvedAuth = googleAuthService ?? GoogleAuthService()
+        let resolvedAPI = youTubeAPIService ?? YouTubeAPIService()
+        self.googleAuthService = resolvedAuth
+        self.youTubeAPIService = resolvedAPI
+        self.liveChatService = YouTubeLiveChatService(apiService: resolvedAPI, authService: resolvedAuth)
 
         setupAuthStateCallback()
     }
@@ -200,9 +210,13 @@ final class YouTubeStreamingViewModel: ObservableObject {
                 isTransitioning = false
             } catch {
                 isTransitioning = false
-                // Show error but don't stop streaming - RTMP is still running
                 errorMessage = error.localizedDescription
             }
+        }
+
+        // Start live chat polling
+        if let broadcastId = manager.broadcastId {
+            startLiveChatPolling(broadcastId: broadcastId)
         }
     }
 
@@ -210,9 +224,10 @@ final class YouTubeStreamingViewModel: ObservableObject {
     func completeBroadcast() {
         guard let manager = lifecycleManager else { return }
 
+        stopLiveChatPolling()
+
         Task {
             await manager.completeBroadcast()
-            // Reset lifecycle state
             broadcastStatus = .complete
             streamHealth = .noData
             showNoDataWarning = false
@@ -225,6 +240,46 @@ final class YouTubeStreamingViewModel: ObservableObject {
         lifecycleManager?.stopMonitoring()
         streamHealth = .noData
         showNoDataWarning = false
+        stopLiveChatPolling()
+    }
+
+    // MARK: - Live Chat
+
+    private func startLiveChatPolling(broadcastId: String) {
+        print("[LiveChat-YT] Starting for broadcast: \(broadcastId)")
+        guard let chatService = liveChatService else {
+            print("[LiveChat-YT] No chat service")
+            return
+        }
+
+        chatService.onNewMessages = { [weak self] newMessages in
+            print("[LiveChat-YT] Received \(newMessages.count) messages")
+            guard let self else { return }
+            self.liveChatMessages.append(contentsOf: newMessages)
+            if self.liveChatMessages.count > self.maxChatMessages {
+                self.liveChatMessages = Array(self.liveChatMessages.suffix(self.maxChatMessages))
+            }
+        }
+
+        chatService.onError = { error in
+            print("[LiveChat-YT] Error: \(error)")
+        }
+
+        Task {
+            do {
+                let accessToken = try await googleAuthService.getAccessToken()
+                print("[LiveChat-YT] Got token, calling startPolling...")
+                try await chatService.startPolling(broadcastId: broadcastId, accessToken: accessToken)
+                print("[LiveChat-YT] Polling started successfully")
+            } catch {
+                print("[LiveChat-YT] Failed to start: \(error)")
+            }
+        }
+    }
+
+    private func stopLiveChatPolling() {
+        liveChatService?.stopPolling()
+        liveChatMessages.removeAll()
     }
 
     // MARK: - Metadata Update
