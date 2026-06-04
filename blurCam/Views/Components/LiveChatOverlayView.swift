@@ -16,25 +16,39 @@ struct LiveChatOverlayView: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.space1) {
-                    ForEach(messages) { message in
-                        LiveChatMessageRow(message: message)
-                            .id(message.id)
+        VStack {
+            Spacer(minLength: 0)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.space1) {
+                        ForEach(messages) { message in
+                            LiveChatMessageRow(message: message)
+                                .id(message.id)
+                        }
                     }
+                    .padding(.vertical, DesignTokens.Spacing.space1)
                 }
-                .padding(.vertical, DesignTokens.Spacing.space1)
-            }
-            .onChange(of: messages.last?.id) { _, newId in
-                if let id = newId {
-                    withAnimation(.easeInOut(duration: DesignTokens.Motion.normal)) {
-                        proxy.scrollTo(id, anchor: .bottom)
+                .onChange(of: messages.last?.id) { _, newId in
+                    if let id = newId {
+                        withAnimation(.easeInOut(duration: DesignTokens.Motion.normal)) {
+                            proxy.scrollTo(id, anchor: .bottom)
+                        }
                     }
                 }
             }
         }
         .frame(maxHeight: 250)
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black, location: 0.15),
+                    .init(color: .black, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
         .accessibilityIdentifier("liveChatOverlay")
     }
 }
