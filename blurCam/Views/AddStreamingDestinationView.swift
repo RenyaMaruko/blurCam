@@ -6,6 +6,7 @@ import SwiftUI
 struct AddStreamingDestinationView: View {
 
     @ObservedObject var viewModel: StreamingSettingsViewModel
+    @StateObject private var liveSettingsViewModel = YouTubeLiveSettingsViewModel()
     @State private var showDeleteConfirmation: Bool = false
 
     var body: some View {
@@ -196,6 +197,43 @@ struct AddStreamingDestinationView: View {
                     .background(DesignTokens.Colors.backgroundSecondary)
                     .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.small))
 
+                    // MARK: - YouTube Live Detail Settings Button (YouTube only)
+
+                    if viewModel.selectedPlatform == .youTube {
+                        NavigationLink {
+                            YouTubeLiveSettingsView(viewModel: liveSettingsViewModel)
+                        } label: {
+                            HStack(spacing: DesignTokens.Spacing.space3) {
+                                Image(systemName: "gearshape.fill")
+                                    .font(.system(size: DesignTokens.Typography.lg, weight: DesignTokens.Typography.Weight.medium))
+                                    .foregroundStyle(Color(hex: 0xFF0000))
+                                    .frame(width: 28)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("ライブの詳細設定")
+                                        .font(.system(size: DesignTokens.Typography.base, weight: DesignTokens.Typography.Weight.medium))
+                                        .foregroundStyle(DesignTokens.Colors.textPrimary)
+
+                                    Text("タイトル・公開設定・カテゴリなど")
+                                        .font(.system(size: DesignTokens.Typography.xs))
+                                        .foregroundStyle(DesignTokens.Colors.textTertiary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: DesignTokens.Typography.sm, weight: DesignTokens.Typography.Weight.medium))
+                                    .foregroundStyle(DesignTokens.Colors.textTertiary)
+                            }
+                            .padding(.horizontal, DesignTokens.Spacing.space4)
+                            .padding(.vertical, DesignTokens.Spacing.space3)
+                        }
+                        .background(DesignTokens.Colors.backgroundSecondary)
+                        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.small))
+                        .accessibilityIdentifier("youTubeLiveDetailSettingsButton")
+                        .accessibilityLabel("ライブの詳細設定")
+                    }
+
                     // MARK: - Validation Error
 
                     if let error = viewModel.formValidationError {
@@ -283,6 +321,21 @@ struct AddStreamingDestinationView: View {
         }
         .preferredColorScheme(.dark)
         .accessibilityIdentifier("addStreamingDestinationView")
+        .task {
+            await liveSettingsViewModel.restorePreviousSignIn()
+            updateYouTubeAPIMode()
+        }
+        .onChange(of: liveSettingsViewModel.authState) { _, _ in
+            updateYouTubeAPIMode()
+        }
+        .onChange(of: viewModel.selectedPlatform) { _, _ in
+            updateYouTubeAPIMode()
+        }
+    }
+
+    /// Updates the StreamingSettingsViewModel's YouTube API mode based on auth state and live settings
+    private func updateYouTubeAPIMode() {
+        viewModel.isYouTubeAPIMode = liveSettingsViewModel.isConfiguredForAPIStreaming
     }
 
     // MARK: - Section Header

@@ -61,6 +61,25 @@ final class CameraViewModel: ObservableObject {
     /// Whether the user has requested to stop streaming (triggers confirmation dialog)
     @Published var showStopStreamingConfirmation: Bool = false
 
+    /// Reference to the YouTube streaming view model for lifecycle management
+    /// Set by the parent view when YouTube API streaming is used
+    weak var youTubeStreamingViewModel: YouTubeStreamingViewModel?
+
+    /// Whether the current streaming session is a YouTube API session
+    private(set) var isYouTubeAPISession: Bool = false
+
+    /// Internal lifecycle manager for camera-button-initiated YouTube API streaming
+    private var internalLifecycleManager: YouTubeBroadcastLifecycleManager?
+
+    /// Progress message displayed during YouTube API setup (e.g., "配信枠を作成中...")
+    @Published private(set) var youTubeSetupProgressMessage: String?
+
+    /// Live chat messages from YouTube Live Chat API (displayed as overlay)
+    @Published var liveChatMessages: [LiveChatMessage] = []
+
+    /// Maximum number of chat messages to retain in memory
+    private let maxChatMessages = 50
+
     // MARK: - Dependencies
 
     private let cameraService: CameraServiceProtocol
@@ -71,6 +90,10 @@ final class CameraViewModel: ObservableObject {
     private let videoRecordingService: VideoRecordingServiceProtocol
     private let streamingService: StreamingServiceProtocol
     private let streamingSettingsRepository: StreamingSettingsRepositoryProtocol
+    private let googleAuthService: GoogleAuthServiceProtocol
+    private let youTubeAPIService: YouTubeAPIServiceProtocol
+    private let youTubeLiveSettingsRepository: YouTubeLiveSettingsRepositoryProtocol
+    private var liveChatService: YouTubeLiveChatServiceProtocol?
 
     // MARK: - Public Properties
 
@@ -132,7 +155,11 @@ final class CameraViewModel: ObservableObject {
         videoFrameProcessor: VideoFrameProcessorProtocol? = nil,
         videoRecordingService: VideoRecordingServiceProtocol? = nil,
         streamingService: StreamingServiceProtocol? = nil,
-        streamingSettingsRepository: StreamingSettingsRepositoryProtocol? = nil
+        streamingSettingsRepository: StreamingSettingsRepositoryProtocol? = nil,
+        googleAuthService: GoogleAuthServiceProtocol? = nil,
+        youTubeAPIService: YouTubeAPIServiceProtocol? = nil,
+        youTubeLiveSettingsRepository: YouTubeLiveSettingsRepositoryProtocol? = nil,
+        liveChatService: YouTubeLiveChatServiceProtocol? = nil
     ) {
         self.cameraService = cameraService
         self.photoRepository = photoRepository
@@ -142,6 +169,15 @@ final class CameraViewModel: ObservableObject {
         self.videoRecordingService = videoRecordingService ?? VideoRecordingService()
         self.streamingService = streamingService ?? StreamingService()
         self.streamingSettingsRepository = streamingSettingsRepository ?? StreamingSettingsRepository()
+        let resolvedGoogleAuth = googleAuthService ?? GoogleAuthService()
+        self.googleAuthService = resolvedGoogleAuth
+        let resolvedYouTubeAPI = youTubeAPIService ?? YouTubeAPIService()
+        self.youTubeAPIService = resolvedYouTubeAPI
+        self.youTubeLiveSettingsRepository = youTubeLiveSettingsRepository ?? YouTubeLiveSettingsRepository()
+        self.liveChatService = liveChatService ?? YouTubeLiveChatService(
+            apiService: resolvedYouTubeAPI,
+            authService: resolvedGoogleAuth
+        )
 
         setupFrameProcessorCallbacks()
         setupStreamingStateCallback()
@@ -161,6 +197,10 @@ final class CameraViewModel: ObservableObject {
         networkMonitor = nil
         recordingTimer?.invalidate()
         streamingTimer?.invalidate()
+        liveChatService?.stopPolling()
+        liveChatService = nil
+        internalLifecycleManager?.stopMonitoring()
+        internalLifecycleManager = nil
     }
 
     // MARK: - Public Methods
@@ -523,7 +563,9 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - Streaming
 
-    /// Starts RTMP live streaming using the currently selected destination or legacy settings
+    /// Starts RTMP live streaming using the currently selected destination or legacy settings.
+    /// If the selected destination is YouTube and the user is signed in with configured settings,
+    /// it uses the YouTube API to automatically create a broadcast/stream.
     func startStreaming() {
         // Block if recording is in progress (mutual exclusion)
         guard !isRecording else {
@@ -531,7 +573,35 @@ final class CameraViewModel: ObservableObject {
             return
         }
 
-        // Try to load selected destination first
+        // Check if YouTube API flow should be used
+        if let destination = streamingSettingsRepository.loadSelectedDestination(),
+           destination.platform == .youTube {
+
+            let isSignedIn = googleAuthService.authState.isSignedIn
+            let liveSettings = youTubeLiveSettingsRepository.loadSettings()
+            let title = liveSettings.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasManualStreamKey = !destination.streamKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+            print("[Streaming] YouTube destination: signedIn=\(isSignedIn), title='\(title)', manualKey=\(hasManualStreamKey)")
+
+            if isSignedIn && !title.isEmpty {
+                print("[Streaming] → YouTube API flow")
+                Task {
+                    await startYouTubeAPIStreaming(settings: liveSettings)
+                }
+                return
+            } else if !isSignedIn && !hasManualStreamKey {
+                errorMessage = "Googleアカウントにログインしてください"
+                return
+            }
+            print("[Streaming] → Manual RTMP fallback")
+        }
+
+        startManualStreaming()
+    }
+
+    /// Starts manual RTMP streaming using the selected destination or legacy settings
+    private func startManualStreaming() {
         let rtmpURL: String
         let streamKey: String
 
@@ -567,14 +637,120 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
-    /// Starts RTMP live streaming with explicit URL and stream key
-    func startStreaming(url: String, streamKey: String) {
+    /// Starts YouTube API-based streaming by creating broadcast/stream and then connecting via RTMP.
+    /// Sets up the internal lifecycle manager for broadcast status transitions (testing -> live -> complete)
+    /// and provides user-friendly error messages for each failure scenario.
+    private func startYouTubeAPIStreaming(settings: YouTubeLiveSettings) async {
+        streamingState = .connecting
+        errorMessage = nil
+        youTubeSetupProgressMessage = "配信枠を作成中..."
+        isYouTubeAPISession = true
+
+        defer {
+            youTubeSetupProgressMessage = nil
+        }
+
+        do {
+            let accessToken = try await googleAuthService.getAccessToken()
+
+            youTubeSetupProgressMessage = "YouTube配信を準備中..."
+
+            let broadcastConfig = YouTubeBroadcastConfig(from: settings)
+            let streamConfig = YouTubeStreamConfig()
+
+            let rtmpInfo = try await youTubeAPIService.setupLiveStream(
+                broadcastConfig: broadcastConfig,
+                streamConfig: streamConfig,
+                accessToken: accessToken
+            )
+
+            // Set up internal lifecycle manager for broadcast status transitions
+            let manager = YouTubeBroadcastLifecycleManager(
+                apiService: youTubeAPIService,
+                authService: googleAuthService
+            )
+            manager.configure(broadcastId: rtmpInfo.broadcastId, streamId: rtmpInfo.streamId)
+            self.internalLifecycleManager = manager
+
+            // Also pass to external YouTubeStreamingViewModel if available
+            youTubeStreamingViewModel?.lifecycleManager?.configure(
+                broadcastId: rtmpInfo.broadcastId,
+                streamId: rtmpInfo.streamId
+            )
+
+            youTubeSetupProgressMessage = "RTMP接続中..."
+
+            // Use the auto-obtained RTMP info to start streaming
+            let width = videoFrameProcessor.videoWidth > 0 ? videoFrameProcessor.videoWidth : 1920
+            let height = videoFrameProcessor.videoHeight > 0 ? videoFrameProcessor.videoHeight : 1080
+
+            try streamingService.startStreaming(
+                url: rtmpInfo.rtmpURL,
+                streamKey: rtmpInfo.streamKey,
+                width: width,
+                height: height
+            )
+            setupStreamingCallbacks()
+
+        } catch let error as GoogleAuthError {
+            errorMessage = mapGoogleAuthErrorToUserMessage(error)
+            streamingState = .idle
+            isYouTubeAPISession = false
+            internalLifecycleManager = nil
+        } catch let error as YouTubeAPIError {
+            errorMessage = mapYouTubeAPIErrorToUserMessage(error)
+            streamingState = .idle
+            isYouTubeAPISession = false
+            internalLifecycleManager = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            streamingState = .idle
+            isYouTubeAPISession = false
+            internalLifecycleManager = nil
+        }
+    }
+
+    /// Maps GoogleAuthError to a user-friendly message per Sprint 13 error handling requirements
+    private func mapGoogleAuthErrorToUserMessage(_ error: GoogleAuthError) -> String {
+        switch error {
+        case .noCurrentUser:
+            return "Googleアカウントにログインしてください"
+        case .tokenRefreshFailed:
+            return "再ログインが必要です。設定画面からGoogleアカウントに再度ログインしてください。"
+        case .signInCancelled:
+            return "サインインがキャンセルされました"
+        case .missingScopes:
+            return "YouTube APIに必要な権限が付与されていません"
+        default:
+            return error.localizedDescription
+        }
+    }
+
+    /// Maps YouTubeAPIError to a user-friendly message per Sprint 13 error handling requirements
+    private func mapYouTubeAPIErrorToUserMessage(_ error: YouTubeAPIError) -> String {
+        switch error {
+        case .networkError:
+            return "ネットワーク接続を確認してください"
+        case .quotaExceeded:
+            return "YouTube APIの利用制限に達しました。しばらくしてから再度お試しください。"
+        case .authenticationError:
+            return "再ログインが必要です。設定画面からGoogleアカウントに再度ログインしてください。"
+        default:
+            return error.localizedDescription
+        }
+    }
+
+    /// Starts RTMP live streaming with explicit URL and stream key.
+    /// When isYouTubeAPI is true, the lifecycle manager will be started after RTMP connects.
+    /// broadcastId is used to start live chat polling for YouTube API sessions.
+    func startStreaming(url: String, streamKey: String, isYouTubeAPI: Bool = false, broadcastId: String? = nil) {
         guard !isRecording else {
             errorMessage = "録画中は配信を開始できません"
             return
         }
 
         errorMessage = nil
+        isYouTubeAPISession = isYouTubeAPI
 
         let width = videoFrameProcessor.videoWidth > 0 ? videoFrameProcessor.videoWidth : 1920
         let height = videoFrameProcessor.videoHeight > 0 ? videoFrameProcessor.videoHeight : 1080
@@ -587,9 +763,15 @@ final class CameraViewModel: ObservableObject {
                 height: height
             )
             setupStreamingCallbacks()
+
+            // Start chat polling if YouTube API session with broadcastId
+            if isYouTubeAPI, let bid = broadcastId {
+                startLiveChatPolling(broadcastId: bid)
+            }
         } catch {
             errorMessage = error.localizedDescription
             streamingState = .idle
+            isYouTubeAPISession = false
         }
     }
 
@@ -600,12 +782,73 @@ final class CameraViewModel: ObservableObject {
         showStopStreamingConfirmation = true
     }
 
-    /// Stops RTMP live streaming and cleans up timer and callbacks
+    /// Stops RTMP live streaming and cleans up timer and callbacks.
+    /// If this is a YouTube API session, completes the broadcast lifecycle (transitions to complete).
     func stopStreaming() {
+        // Complete YouTube broadcast lifecycle before disconnecting RTMP
+        if isYouTubeAPISession {
+            // Use internal lifecycle manager first (camera-button initiated YouTube streaming)
+            if let internalManager = internalLifecycleManager {
+                Task {
+                    await internalManager.completeBroadcast()
+                }
+                internalLifecycleManager?.stopMonitoring()
+                internalLifecycleManager = nil
+            }
+            // Also notify external YouTube streaming view model if set
+            youTubeStreamingViewModel?.completeBroadcast()
+            youTubeStreamingViewModel?.stopLifecycleMonitoring()
+        }
+
         teardownStreamingCallbacks()
         stopStreamingTimer()
+        stopLiveChatPolling()
         streamingService.stopStreaming()
         streamingState = .idle
+        isYouTubeAPISession = false
+        youTubeSetupProgressMessage = nil
+    }
+
+    // MARK: - Live Chat
+
+    /// Starts live chat polling for the current YouTube API streaming session.
+    /// Called automatically when YouTube API streaming reaches the .streaming state.
+    private func startLiveChatPolling(broadcastId: String) {
+        print("[LiveChat] Starting for broadcast: \(broadcastId)")
+        guard let chatService = liveChatService else {
+            print("[LiveChat] No chat service")
+            return
+        }
+
+        chatService.onNewMessages = { [weak self] newMessages in
+            guard let self else { return }
+            print("[LiveChat] Received \(newMessages.count) messages")
+            self.liveChatMessages.append(contentsOf: newMessages)
+            if self.liveChatMessages.count > self.maxChatMessages {
+                self.liveChatMessages = Array(self.liveChatMessages.suffix(self.maxChatMessages))
+            }
+        }
+
+        chatService.onError = { error in
+            print("[LiveChat] Error: \(error.localizedDescription)")
+        }
+
+        Task {
+            do {
+                let accessToken = try await googleAuthService.getAccessToken()
+                print("[LiveChat] Got token, starting poll...")
+                try await chatService.startPolling(broadcastId: broadcastId, accessToken: accessToken)
+                print("[LiveChat] Polling started")
+            } catch {
+                print("[LiveChat] Failed: \(error)")
+            }
+        }
+    }
+
+    /// Stops live chat polling and clears messages
+    private func stopLiveChatPolling() {
+        liveChatService?.stopPolling()
+        liveChatMessages.removeAll()
     }
 
     // MARK: - Private Methods
@@ -652,14 +895,50 @@ final class CameraViewModel: ObservableObject {
                 case .streaming:
                     // Start the streaming elapsed timer when streaming begins
                     self.startStreamingTimer()
+                    // Start YouTube broadcast lifecycle if this is a YouTube API session
+                    if self.isYouTubeAPISession {
+                        // Use internal lifecycle manager for camera-button-initiated sessions
+                        if let internalManager = self.internalLifecycleManager {
+                            self.startInternalBroadcastLifecycle(manager: internalManager)
+                        }
+                        // Also notify external view model if set
+                        self.youTubeStreamingViewModel?.startBroadcastLifecycle()
+                        // Start live chat polling for YouTube API sessions
+                        if let broadcastId = self.internalLifecycleManager?.broadcastId {
+                            self.startLiveChatPolling(broadcastId: broadcastId)
+                        }
+                    }
                 case .error(let message):
                     self.errorMessage = message
                     self.teardownStreamingCallbacks()
                     self.stopStreamingTimer()
+                    self.stopLiveChatPolling()
+                    if self.isYouTubeAPISession {
+                        self.internalLifecycleManager?.stopMonitoring()
+                        self.youTubeStreamingViewModel?.stopLifecycleMonitoring()
+                    }
                 case .idle:
                     self.stopStreamingTimer()
+                    self.stopLiveChatPolling()
                 case .connecting:
                     break
+                }
+            }
+        }
+    }
+
+    /// Starts the internal broadcast lifecycle (testing -> live) after RTMP connection is established.
+    /// If the transition fails, shows an error but keeps the RTMP connection alive for retry.
+    private func startInternalBroadcastLifecycle(manager: YouTubeBroadcastLifecycleManager) {
+        Task {
+            do {
+                try await manager.startLifecycle()
+            } catch {
+                // Show error but do NOT stop RTMP streaming — keep connection alive (retryable)
+                if let apiError = error as? YouTubeAPIError {
+                    self.errorMessage = self.mapYouTubeAPIErrorToUserMessage(apiError)
+                } else {
+                    self.errorMessage = error.localizedDescription
                 }
             }
         }
@@ -779,6 +1058,7 @@ final class CameraViewModel: ObservableObject {
     /// Called when the app moves to background. Stops streaming to prevent resource issues.
     private func handleBackgroundTransition() {
         if streamingState.isActive {
+            // For YouTube API sessions, complete the broadcast before stopping
             stopStreaming()
         }
     }
@@ -789,6 +1069,9 @@ final class CameraViewModel: ObservableObject {
         if streamingState != .idle && !streamingService.streamingState.isActive {
             streamingState = .idle
             stopStreamingTimer()
+            isYouTubeAPISession = false
+            internalLifecycleManager = nil
+            youTubeSetupProgressMessage = nil
         }
     }
 

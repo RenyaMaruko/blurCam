@@ -77,6 +77,10 @@ final class StreamingSettingsViewModel: ObservableObject {
     /// Whether the stream key is visible in the add form
     @Published var isStreamKeyVisible: Bool = false
 
+    /// Whether YouTube API mode is active (signed in with live settings configured).
+    /// When true, stream key validation is bypassed for YouTube destinations.
+    @Published var isYouTubeAPIMode: Bool = false
+
     // MARK: - Dependencies
 
     private let repository: StreamingSettingsRepositoryProtocol
@@ -195,7 +199,8 @@ final class StreamingSettingsViewModel: ObservableObject {
 
     // MARK: - Validation
 
-    /// Validates the add form and returns the first error, or nil if valid
+    /// Validates the add form and returns the first error, or nil if valid.
+    /// When YouTube API mode is active and platform is YouTube, stream key validation is bypassed.
     func validateForm() -> StreamingDestinationValidationError? {
         let url = formRTMPURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let key = formStreamKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -208,7 +213,9 @@ final class StreamingSettingsViewModel: ObservableObject {
             return .invalidURLFormat
         }
 
-        if key.isEmpty {
+        // Skip stream key validation for YouTube when API mode is active
+        let skipStreamKeyValidation = (selectedPlatform == .youTube && isYouTubeAPIMode)
+        if key.isEmpty && !skipStreamKeyValidation {
             return .emptyStreamKey
         }
 

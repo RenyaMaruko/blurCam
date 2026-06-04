@@ -45,4 +45,19 @@ enum StreamingPlatform: String, Codable, CaseIterable, Identifiable {
             return "server.rack"
         }
     }
+
+    /// Platforms available for manual RTMP destination setup
+    static var manualDestinationCases: [StreamingPlatform] {
+        return [.youTube, .twitch, .custom]
+    }
+}
+
+/// Represents the YouTube API-based streaming flow type.
+/// This is separate from StreamingPlatform to keep the existing
+/// manual RTMP flow untouched.
+enum YouTubeStreamingFlowType: Equatable {
+    /// Manual RTMP: user enters URL and stream key
+    case manual
+    /// YouTube API: automatic broadcast/stream creation
+    case youTubeAPI
 }

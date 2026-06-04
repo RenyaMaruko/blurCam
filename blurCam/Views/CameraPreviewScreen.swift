@@ -77,6 +77,19 @@ struct CameraPreviewScreen: View {
                         .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.isNetworkUnsatisfied)
                 }
 
+                // Live chat overlay (shown during YouTube API streaming with chat messages)
+                if cameraViewModel.isStreaming
+                    && cameraViewModel.isYouTubeAPISession
+                    && !cameraViewModel.liveChatMessages.isEmpty {
+                    LiveChatOverlayView(messages: cameraViewModel.liveChatMessages)
+                        .frame(maxWidth: 300, alignment: .leading)
+                        .padding(.leading, DesignTokens.Spacing.space3)
+                        .padding(.bottom, DesignTokens.Spacing.space2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .animation(.easeInOut(duration: DesignTokens.Motion.normal), value: cameraViewModel.liveChatMessages.map(\.id))
+                }
+
                 // Bottom controls area
                 bottomControls
             }
@@ -116,6 +129,7 @@ struct CameraPreviewScreen: View {
             SettingsView(
                 viewModel: settingsViewModel,
                 streamingSettingsViewModel: streamingSettingsViewModel,
+                cameraViewModel: cameraViewModel,
                 onDismiss: {
                     showSettings = false
                 }
@@ -609,7 +623,7 @@ struct CameraPreviewScreen: View {
                 .tint(DesignTokens.Colors.textTertiary)
                 .scaleEffect(0.6)
 
-            Text("接続中...")
+            Text(cameraViewModel.youTubeSetupProgressMessage ?? "接続中...")
                 .font(.system(
                     size: DesignTokens.Typography.xs,
                     weight: DesignTokens.Typography.Weight.medium
@@ -627,7 +641,7 @@ struct CameraPreviewScreen: View {
                 )
         )
         .accessibilityIdentifier("connectingIndicator")
-        .accessibilityLabel("接続中")
+        .accessibilityLabel(cameraViewModel.youTubeSetupProgressMessage ?? "接続中")
     }
 
     // MARK: - Network Warning Banner
